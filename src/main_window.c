@@ -287,7 +287,6 @@ static void main_window_init(MainWindow *wnd)
 	wnd->settings = gtk_settings_get_default();
 	wnd->header_bar = gtk_header_bar_new();
 	wnd->open_hdr_btn = NULL;
-	wnd->fullscreen_hdr_btn = NULL;
 	wnd->menu_hdr_btn = NULL;
 	wnd->main_box = gtk_box_new(GTK_ORIENTATION_VERTICAL, 0);
 	wnd->vid_area_paned = gtk_paned_new(GTK_ORIENTATION_HORIZONTAL);
@@ -572,7 +571,6 @@ void main_window_enable_csd(MainWindow *wnd)
 	GMenu *menu_btn_menu;
 	GMenu *open_btn_menu;
 	GIcon *open_icon;
-	GIcon *fullscreen_icon;
 	GIcon *menu_icon;
 
 	open_btn_menu = g_menu_new();
@@ -580,27 +578,19 @@ void main_window_enable_csd(MainWindow *wnd)
 
 	open_icon = g_themed_icon_new_with_default_fallbacks
 				("list-add-symbolic");
-	fullscreen_icon = g_themed_icon_new_with_default_fallbacks
-				("view-fullscreen-symbolic");
 	menu_icon = g_themed_icon_new_with_default_fallbacks
 				("view-list-symbolic");
 
 	wnd->playlist_width = PLAYLIST_DEFAULT_WIDTH+PLAYLIST_CSD_WIDTH_OFFSET;
 	wnd->open_hdr_btn = gtk_menu_button_new();
-	wnd->fullscreen_hdr_btn = gtk_button_new();
 	wnd->menu_hdr_btn = gtk_menu_button_new();
 
 	menu_build_open_btn(open_btn_menu);
 	menu_build_menu_btn(menu_btn_menu, NULL, NULL, NULL);
 
 	gtk_widget_set_can_focus(wnd->open_hdr_btn, FALSE);
-	gtk_widget_set_can_focus(wnd->fullscreen_hdr_btn, FALSE);
 	gtk_widget_set_can_focus(wnd->menu_hdr_btn, FALSE);
 
-	gtk_button_set_image
-		(	GTK_BUTTON(wnd->fullscreen_hdr_btn),
-			gtk_image_new_from_gicon
-				(fullscreen_icon, GTK_ICON_SIZE_MENU ));
 	gtk_button_set_image
 		(	GTK_BUTTON(wnd->open_hdr_btn),
 			gtk_image_new_from_gicon
@@ -620,12 +610,6 @@ void main_window_enable_csd(MainWindow *wnd)
 		(GTK_HEADER_BAR(wnd->header_bar), wnd->open_hdr_btn);
 	gtk_header_bar_pack_end
 		(GTK_HEADER_BAR(wnd->header_bar), wnd->menu_hdr_btn);
-	gtk_header_bar_pack_end
-		(GTK_HEADER_BAR(wnd->header_bar), wnd->fullscreen_hdr_btn);
-
-	gtk_actionable_set_action_name
-		(	GTK_ACTIONABLE(wnd->fullscreen_hdr_btn),
-			"app.fullscreen_toggle" );
 
 	gtk_paned_set_position(	GTK_PANED(wnd->vid_area_paned),
 				MAIN_WINDOW_DEFAULT_WIDTH
@@ -638,9 +622,7 @@ void main_window_enable_csd(MainWindow *wnd)
 
 gboolean main_window_get_csd_enabled(MainWindow *wnd)
 {
-	return	wnd->open_hdr_btn &&
-		wnd->fullscreen_hdr_btn &&
-		wnd->menu_hdr_btn;
+	return	wnd->open_hdr_btn && wnd->menu_hdr_btn;
 }
 
 void main_window_set_playlist_visible(MainWindow *wnd, gboolean visible)

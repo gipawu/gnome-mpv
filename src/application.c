@@ -223,12 +223,6 @@ static void startup_handler(GApplication *gapp, gpointer data)
 	main_window_load_state(app->gui);
 	gtk_widget_show_all(GTK_WIDGET(app->gui));
 
-	if(csd_enable)
-	{
-		control_box_set_fullscreen_btn_visible
-			(CONTROL_BOX(app->gui->control_box), FALSE);
-	}
-
 	control_box_set_chapter_enabled
 		(CONTROL_BOX(app->gui->control_box), FALSE);
 

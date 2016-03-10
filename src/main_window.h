@@ -57,7 +57,6 @@ struct _MainWindow
 	GtkSettings* settings;
 	GtkWidget *header_bar;
 	GtkWidget *open_hdr_btn;
-	GtkWidget *fullscreen_hdr_btn;
 	GtkWidget *menu_hdr_btn;
 	GtkWidget *main_box;
 	GtkWidget *vid_area_paned;
