@@ -483,9 +483,12 @@ void main_window_load_state(MainWindow *wnd)
 {
 	if(!gtk_widget_get_realized(GTK_WIDGET(wnd)))
 	{
+		GApplication *gapp = g_application_get_default();
 		GSettings *settings = g_settings_new(CONFIG_WIN_STATE);
 		gint width = g_settings_get_int(settings, "width");
 		gint height = g_settings_get_int(settings, "height");
+		GAction *action =	g_action_map_lookup_action
+					(G_ACTION_MAP(gapp), "playlist_toggle");
 
 		wnd->playlist_width
 			= g_settings_get_int(settings, "playlist-width");
@@ -498,6 +501,9 @@ void main_window_load_state(MainWindow *wnd)
 		gtk_widget_set_visible(wnd->playlist, wnd->playlist_visible);
 		gtk_paned_set_position(	GTK_PANED(wnd->vid_area_paned),
 					width-wnd->playlist_width );
+
+		g_action_change_state
+			(action, g_variant_new_boolean(wnd->playlist_visible));
 
 		g_clear_object(&settings);
 	}

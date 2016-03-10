@@ -145,7 +145,7 @@ void menu_build_full(	GMenu *menu,
 			(_("_View"), G_MENU_MODEL(view_menu));
 
 	playlist_menu_item
-		= g_menu_item_new(_("_Toggle Playlist"), "app.playlist_toggle");
+		= g_menu_item_new(_("_Show Playlist"), "app.playlist_toggle");
 
 	fullscreen_menu_item
 		= g_menu_item_new(_("_Fullscreen"), "app.fullscreen_toggle");
@@ -289,7 +289,7 @@ void menu_build_menu_btn(	GMenu *menu,
 
 	playlist_toggle_menu_item
 		= g_menu_item_new
-			(_("_Toggle Playlist"), "app.playlist_toggle");
+			(_("_Show Playlist"), "app.playlist_toggle");
 
 	playlist_save_menu_item
 		= g_menu_item_new
