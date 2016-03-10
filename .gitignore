@@ -40,9 +40,13 @@ po/stamp-it
 data/*.valid
 data/gnome-mpv.appdata.xml
 data/gnome-mpv.desktop
+data/io.github.GnomeMpv.desktop
+data/io.github.GnomeMpv.gschema.xml
 data/org.gnome-mpv.gschema.xml
 po/*.gmo
 po/.intltool-merge-cache
 .dirstamp
+src/authors.*
 src/gnome-mpv
+src/marshal.*
 src/mpris/mpris_gdbus.*
