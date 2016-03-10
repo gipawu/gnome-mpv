@@ -350,6 +350,12 @@ static void mpv_obj_update_playlist(MpvObj *mpv)
 				->values[i].u.list
 				->values[3].u.string;
 		}
+		else if(prop_count == 2)
+		{
+			title = mpv_playlist.u.list
+				->values[i].u.list
+				->values[1].u.string;
+		}
 
 		name = title?title:get_name_from_path(uri);
 
@@ -389,7 +395,6 @@ static void mpv_obj_update_playlist(MpvObj *mpv)
 		}
 
 		mpv_free(uri);
-		g_free(name);
 	}
 
 	/* If there are more entries in the playlist widget than mpv's playlist,
