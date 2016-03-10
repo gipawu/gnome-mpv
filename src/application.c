@@ -1049,6 +1049,7 @@ static void setup_accelerators(Application *app)
 	add_accelerator(gtk_app, "<Control>3", "app.video_size(@d 0.5)");
 	add_accelerator(gtk_app, "F9", "app.playlist_toggle");
 	add_accelerator(gtk_app, "F11", "app.fullscreen_toggle");
+	add_accelerator(gtk_app, "F12", "app.decorate_toggle");
 }
 
 

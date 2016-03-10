@@ -479,6 +479,17 @@ static void fullscreen_handler(	GSimpleAction *action,
 	g_free(name);
 }
 
+static void decorate_toggle_handler(	GSimpleAction *action,
+					GVariant *param,
+					gpointer data )
+{
+	Application *app = data;
+	gboolean decorate = g_variant_get_boolean(param);
+
+	g_simple_action_set_state(action, param);
+	main_window_set_decorated(app->gui, decorate);
+}
+
 static void video_size_handler(	GSimpleAction *action,
 				GVariant *param,
 				gpointer data )
@@ -560,6 +571,9 @@ void actionctl_map_actions(Application *app)
 		.activate = fullscreen_handler},
 		{.name = "fullscreen_leave",
 		.activate = fullscreen_handler},
+		{.name = "decorate_toggle",
+		.state = "true",
+		.change_state = decorate_toggle_handler},
 		{.name = "video_size",
 		.activate = video_size_handler,
 		.parameter_type = "d"} };

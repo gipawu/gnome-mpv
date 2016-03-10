@@ -149,7 +149,7 @@ static gboolean motion_notify_handler(GtkWidget *widget, GdkEventMotion *event)
 	gdk_window_set_cursor
 		(gtk_widget_get_window(GTK_WIDGET(wnd->vid_area)), cursor);
 
-	if(wnd->fullscreen)
+	if(wnd->fullscreen | !gtk_window_get_decorated(GTK_WINDOW(wnd)))
 	{
 		gtk_revealer_set_reveal_child
 			(GTK_REVEALER(wnd->fs_revealer), TRUE);
@@ -225,7 +225,7 @@ static gboolean timeout_handler(gpointer data)
 	button = GTK_SCALE_BUTTON(control_box->volume_button);
 	popup = gtk_scale_button_get_popup(button);
 
-	if(wnd->fullscreen
+	if((wnd->fullscreen | !gtk_window_get_decorated(GTK_WINDOW(wnd)))
 	&& !wnd->fs_control_hover
 	&& !gtk_widget_is_visible(popup))
 	{
@@ -375,15 +375,18 @@ void main_window_set_fullscreen(MainWindow *wnd, gboolean fullscreen)
 			gtk_widget_set_size_request
 				(wnd->control_box, width, -1);
 
-			g_object_ref(wnd->control_box);
-			gtk_container_remove(main_box, wnd->control_box);
-			gtk_container_add(revealer, wnd->control_box);
-			g_object_unref(wnd->control_box);
+			if (gtk_window_get_decorated(GTK_WINDOW(wnd)))
+			{
+				g_object_ref(wnd->control_box);
+				gtk_container_remove(main_box, wnd->control_box);
+				gtk_container_add(revealer, wnd->control_box);
+				g_object_unref(wnd->control_box);
+				gtk_widget_show(GTK_WIDGET(revealer));
+			}
 
 			control_box_set_fullscreen_state(control_box, TRUE);
 			gtk_window_fullscreen(GTK_WINDOW(wnd));
 			gtk_window_present(GTK_WINDOW(wnd));
-			gtk_widget_show(GTK_WIDGET(revealer));
 
 			if(!main_window_get_csd_enabled(wnd))
 			{
@@ -403,14 +406,17 @@ void main_window_set_fullscreen(MainWindow *wnd, gboolean fullscreen)
 			gtk_widget_set_valign(wnd->control_box, GTK_ALIGN_FILL);
 			gtk_widget_set_size_request(wnd->control_box, -1, -1);
 
-			g_object_ref(wnd->control_box);
-			gtk_container_remove(revealer, wnd->control_box);
-			gtk_container_add(main_box, wnd->control_box);
-			g_object_unref(wnd->control_box);
+			if (gtk_window_get_decorated(GTK_WINDOW(wnd)))
+			{
+				g_object_ref(wnd->control_box);
+				gtk_container_remove(revealer, wnd->control_box);
+				gtk_container_add(main_box, wnd->control_box);
+				g_object_unref(wnd->control_box);
+				gtk_widget_hide(GTK_WIDGET(revealer));
+			}
 
 			control_box_set_fullscreen_state(control_box, FALSE);
 			gtk_window_unfullscreen(GTK_WINDOW(wnd));
-			gtk_widget_hide(GTK_WIDGET(revealer));
 
 			if(!main_window_get_csd_enabled(wnd))
 			{
@@ -436,6 +442,66 @@ void main_window_set_fullscreen(MainWindow *wnd, gboolean fullscreen)
 void main_window_toggle_fullscreen(MainWindow *wnd)
 {
 	main_window_set_fullscreen(wnd, !wnd->fullscreen);
+}
+
+void main_window_set_decorated(MainWindow *wnd, gboolean decorated)
+{
+	ControlBox *control_box = CONTROL_BOX(wnd->control_box);
+	GtkContainer* main_box = GTK_CONTAINER(wnd->main_box);
+	GtkContainer* revealer = GTK_CONTAINER(wnd->fs_revealer);
+
+	gint width;
+	gint height;
+	gint height_margin;
+	gint offset;
+
+	offset =	main_window_get_csd_enabled(wnd)?
+			PLAYLIST_CSD_WIDTH_OFFSET:0;
+
+	if (decorated)
+	{
+		gtk_window_set_decorated(GTK_WINDOW(wnd),TRUE);
+
+		gtk_window_get_size(GTK_WINDOW(wnd), &width, &height);
+		/* TODO height_margin is wrongly calculated - always 0 */
+		/*height_margin = height - gtk_widget_get_allocated_height(
+			wnd->vid_area);*/
+		height_margin = 133;
+
+		gtk_window_resize(	GTK_WINDOW(wnd),
+					width,
+					height + height_margin - offset);
+
+		if (!wnd->fullscreen)
+		{
+			g_object_ref(wnd->control_box);
+			gtk_container_remove(revealer, wnd->control_box);
+			gtk_container_add(main_box, wnd->control_box);
+			g_object_unref(wnd->control_box);
+			gtk_widget_hide(GTK_WIDGET(revealer));
+		}
+	}
+	else
+	{
+		if (!wnd->fullscreen)
+		{
+			g_object_ref(wnd->control_box);
+			gtk_container_remove(main_box, wnd->control_box);
+			gtk_container_add(revealer, wnd->control_box);
+			g_object_unref(wnd->control_box);
+			gtk_widget_show(GTK_WIDGET(revealer));
+			timeout_handler(wnd);
+		}
+
+		gtk_window_get_size(GTK_WINDOW(wnd), &width, &height);
+		height_margin = height - gtk_widget_get_allocated_height(wnd->vid_area);
+
+		gtk_window_resize(	GTK_WINDOW(wnd),
+					width,
+					height - height_margin + offset);
+
+		gtk_window_set_decorated(GTK_WINDOW(wnd),FALSE);
+	}
 }
 
 void main_window_reset(MainWindow *wnd)
