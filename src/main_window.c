@@ -385,12 +385,7 @@ void main_window_set_fullscreen(MainWindow *wnd, gboolean fullscreen)
 			gtk_window_present(GTK_WINDOW(wnd));
 			gtk_widget_show(GTK_WIDGET(revealer));
 
-			if(main_window_get_csd_enabled(wnd))
-			{
-				control_box_set_fullscreen_btn_visible
-					(CONTROL_BOX(wnd->control_box), TRUE);
-			}
-			else
+			if(!main_window_get_csd_enabled(wnd))
 			{
 				gtk_application_window_set_show_menubar
 					(GTK_APPLICATION_WINDOW(wnd), FALSE);
@@ -417,12 +412,7 @@ void main_window_set_fullscreen(MainWindow *wnd, gboolean fullscreen)
 			gtk_window_unfullscreen(GTK_WINDOW(wnd));
 			gtk_widget_hide(GTK_WIDGET(revealer));
 
-			if(main_window_get_csd_enabled(wnd))
-			{
-				control_box_set_fullscreen_btn_visible
-					(CONTROL_BOX(wnd->control_box), FALSE);
-			}
-			else
+			if(!main_window_get_csd_enabled(wnd))
 			{
 				gtk_application_window_set_show_menubar
 					(GTK_APPLICATION_WINDOW(wnd), TRUE);
