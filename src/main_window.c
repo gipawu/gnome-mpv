@@ -619,40 +619,22 @@ void main_window_set_playlist_visible(MainWindow *wnd, gboolean visible)
 {
 	if(visible != wnd->playlist_visible && !wnd->fullscreen)
 	{
-		gint offset;
 		gint handle_pos;
 		gint width;
 		gint height;
 
-		offset =	main_window_get_csd_enabled(wnd)?
-				PLAYLIST_CSD_WIDTH_OFFSET:0;
 		handle_pos =	gtk_paned_get_position
 				(GTK_PANED(wnd->vid_area_paned));
 
 		gtk_window_get_size(GTK_WINDOW(wnd), &width, &height);
 
-		if(visible)
-		{
-			gtk_paned_set_position
-				(GTK_PANED(wnd->vid_area_paned), width-offset);
-		}
-		else
+		if(!visible)
 		{
 			wnd->playlist_width = width-handle_pos;
 		}
 
 		wnd->playlist_visible = visible;
 		gtk_widget_set_visible(wnd->playlist, visible);
-
-		/* For some unknown reason, width needs to be adjusted by some
-		 * offset (50px) when CSD is enabled for the resulting size to
-		 * be correct.
-		 */
-		gtk_window_resize(	GTK_WINDOW(wnd),
-					visible
-					?width+wnd->playlist_width-offset
-					:handle_pos+offset,
-					height );
 	}
 }
 

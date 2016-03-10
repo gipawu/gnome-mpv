@@ -293,6 +293,12 @@ void resize_window_to_fit(Application *app, gdouble multiplier)
 
 		width_margin = main_window_get_width_margin(app->gui);
 		height_margin = main_window_get_height_margin(app->gui);
+
+		if (main_window_get_playlist_visible(app->gui))
+		{
+			width_margin -= gtk_widget_get_allocated_width(app->gui->playlist);
+		}
+
 		new_width = (gint)(multiplier*(gdouble)width)+width_margin;
 		new_height = (gint)(multiplier*(gdouble)height)+height_margin;
 
