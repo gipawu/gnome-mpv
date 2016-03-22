@@ -123,6 +123,7 @@ static void playlist_init(Playlist *pl)
 	pl->store = gtk_list_store_new(	3,
 					G_TYPE_STRING,
 					G_TYPE_STRING,
+					G_TYPE_STRING,
 					G_TYPE_INT );
 
 	pl->move_dest = -1;
@@ -197,16 +198,14 @@ void playlist_set_indicator_pos(Playlist *pl, gint pos)
 
 	rc = gtk_tree_model_get_iter_first(GTK_TREE_MODEL(pl->store), &iter);
 
+	/* Put UTF-8 'right-pointing triangle' at requested row and clear other
+	 * rows.
+	 */
 	while(rc)
 	{
-		const PangoWeight weight =	(pos-- == 0)?
-						PANGO_WEIGHT_BOLD:
-						PANGO_WEIGHT_NORMAL;
+		gchar const *const str = (pos-- == 0)?"\xe2\x96\xb6":"";
 
-		gtk_list_store_set(	pl->store,
-					&iter,
-					PLAYLIST_WEIGHT_COLUMN, weight,
-					-1 );
+		gtk_list_store_set(pl->store, &iter, 0, str, -1);
 
 		rc = gtk_tree_model_iter_next(GTK_TREE_MODEL(pl->store), &iter);
 	}
