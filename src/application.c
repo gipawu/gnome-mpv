@@ -103,7 +103,7 @@ static gboolean mouse_press_handler(	GtkWidget *widget,
 static void opengl_cb_update_callback(void *cb_ctx);
 static gboolean get_use_opengl(void);
 static gint64 get_xid(GtkWidget *widget);
-static gboolean load_files(gpointer data);
+static gboolean load_files(Application* app, const gchar **files);
 static void connect_signals(Application *app);
 static inline void add_accelerator(	GtkApplication *app,
 					const char *accel,
@@ -167,6 +167,7 @@ static void startup_handler(GApplication *gapp, gpointer data)
 
 	app->files = NULL;
 	app->inhibit_cookie = 0;
+	app->target_playlist_pos = -1;
 	app->config = g_settings_new(CONFIG_ROOT);
 	app->playlist_store = playlist_new();
 	app->gui = MAIN_WINDOW(main_window_new(app, app->playlist_store, use_opengl));
@@ -258,6 +259,14 @@ static void activate_handler(GApplication *gapp, gpointer data)
 	gtk_window_present(GTK_WINDOW(APPLICATION(data)->gui));
 }
 
+static void mpv_init_handler(MpvObj *mpv, gpointer data)
+{
+	Application *app = data;
+
+	g_signal_handlers_disconnect_by_func(mpv, mpv_init_handler, data);
+	load_files(app, (const gchar **)app->files);
+}
+
 static void open_handler(	GApplication *gapp,
 				gpointer files,
 				gint n_files,
@@ -269,6 +278,8 @@ static void open_handler(	GApplication *gapp,
 
 	if(n_files > 0)
 	{
+		MpvObjState state;
+
 		app->files = g_malloc(sizeof(GFile *)*(gsize)(n_files+1));
 
 		for(i = 0; i < n_files; i++)
@@ -278,7 +289,19 @@ static void open_handler(	GApplication *gapp,
 
 		app->files[i] = NULL;
 
-		g_idle_add(load_files, app);
+		mpv_obj_get_state(app->mpv, &state);
+
+		if(state.ready)
+		{
+			load_files(app, (const gchar **)app->files);
+		}
+		else
+		{
+			g_signal_connect(	app->mpv,
+						"mpv-init",
+						G_CALLBACK(mpv_init_handler),
+						app );
+		}
 	}
 }
 
@@ -336,16 +359,21 @@ static void playlist_row_activated_handler(	GtkTreeView *tree_view,
 					MPV_FORMAT_INT64,
 					&pos );
 
-	if(rc >= 0 && indices && indices[0] != pos)
+	mpv_obj_set_property_flag(app->mpv, "pause", FALSE);
+
+	if(indices && indices[0] != pos)
 	{
-		mpv_obj_set_property(	app->mpv,
-					"playlist-pos",
-					MPV_FORMAT_INT64,
-					&index );
-	}
-	else
-	{
-		mpv_obj_set_property_flag(app->mpv, "pause", FALSE);
+		if(rc >= 0)
+		{
+			mpv_obj_set_property(	app->mpv,
+						"playlist-pos",
+						MPV_FORMAT_INT64,
+						&index );
+		}
+		else
+		{
+			app->target_playlist_pos = index;
+		}
 	}
 }
 
@@ -542,25 +570,12 @@ static void mpv_prop_change_handler(mpv_event_property *prop, gpointer data)
 	{
 		gdouble volume = prop->data?*((double *)prop->data)/100.0:0;
 
-		g_signal_handlers_block_matched
-			(	control_box->volume_button,
-				G_SIGNAL_MATCH_DATA,
-				0, 0, NULL, NULL,
-				app );
-
 		control_box_set_volume(control_box, volume);
-
-		g_signal_handlers_unblock_matched
-			(	control_box->volume_button,
-				G_SIGNAL_MATCH_DATA,
-				0, 0, NULL, NULL,
-				app );
 	}
 	else if(g_strcmp0(prop->name, "aid") == 0)
 	{
 		/* prop->data == NULL iff there is no audio track */
-		gtk_widget_set_sensitive
-			(control_box->volume_button, !!prop->data);
+		control_box_set_volume_enabled(control_box, !!prop->data);
 	}
 	else if(g_strcmp0(prop->name, "length") == 0 && prop->data)
 	{
@@ -605,15 +620,31 @@ static void mpv_event_handler(mpv_event *event, gpointer data)
 	}
 	else if(event->event_id == MPV_EVENT_PROPERTY_CHANGE)
 	{
-		mpv_prop_change_handler(event->data, data);
+		if(state.loaded)
+		{
+			mpv_prop_change_handler(event->data, data);
+		}
 	}
 	else if(event->event_id == MPV_EVENT_FILE_LOADED)
 	{
 		ControlBox *control_box = CONTROL_BOX(app->gui->control_box);
-		gint64 pos;
-		gdouble length;
-		gchar *title;
+		gint64 aid = -1;
+		gint64 pos = -1;
+		gdouble length = 0;
+		gchar *title = NULL;
 
+		if(app->target_playlist_pos != -1)
+		{
+			mpv_obj_set_property(	app->mpv,
+						"playlist-pos",
+						MPV_FORMAT_INT64,
+						&app->target_playlist_pos );
+
+			app->target_playlist_pos = -1;
+		}
+
+		mpv_obj_get_property
+			(mpv, "aid", MPV_FORMAT_INT64, &aid);
 		mpv_obj_get_property
 			(mpv, "playlist-pos", MPV_FORMAT_INT64, &pos);
 		mpv_obj_get_property
@@ -622,6 +653,7 @@ static void mpv_event_handler(mpv_event *event, gpointer data)
 		title = mpv_obj_get_property_string(mpv, "media-title");
 
 		control_box_set_enabled(control_box, TRUE);
+		control_box_set_volume_enabled(control_box, (aid != -1));
 		control_box_set_playing_state(control_box, !state.paused);
 		playlist_set_indicator_pos(mpv->playlist, (gint)pos);
 		control_box_set_seek_bar_length(control_box, (gint)length);
@@ -687,14 +719,10 @@ static void drag_data_handler(	GtkWidget *widget,
 				guint time,
 				gpointer data)
 {
-	static const char *const sub_exts[]
-		= {	"utf", "utf8", "utf-8", "idx", "sub", "srt", "smi",
-			"rt", "txt", "ssa", "aqt", "jss", "js", "ass", "mks",
-			"vtt", "sup", NULL };
-
 	Application *app = data;
-	gboolean append = (widget == app->gui->playlist);
+	PlaylistWidget *playlist = PLAYLIST_WIDGET(app->gui->playlist);
 	gchar **uri_list = NULL;
+	gboolean append = (widget == GTK_WIDGET(playlist));
 
 	if(sel_data && gtk_selection_data_get_length(sel_data) > 0)
 	{
@@ -703,46 +731,10 @@ static void drag_data_handler(	GtkWidget *widget,
 
 	if(uri_list)
 	{
-		mpv_obj_set_property_flag(app->mpv, "pause", FALSE);
-
-		for(gint i = 0; uri_list[i]; i++)
-		{
-			const gchar *ext = strrchr(uri_list[i], '.')+1;
-			gint j;
-
-			for(	j = 0;
-				sub_exts[j] && g_strcmp0(ext, sub_exts[j]) != 0;
-				j++ );
-
-			/* Only attempt to load file as subtitle if there
-			 * already is a file loaded. Try to load the file as a
-			 * media file otherwise.
-			 */
-			if(sub_exts[j] && mpv_obj_is_loaded(app->mpv))
-			{
-				const gchar *cmd[] = {"sub-add", NULL, NULL};
-				gchar *path;
-
-				/* Convert to path if possible to get rid of
-				 * percent encoding.
-				 */
-				path =	g_filename_from_uri
-					(uri_list[i], NULL, NULL);
-
-				cmd[1] = path?:uri_list[i];
-
-				mpv_obj_command(app->mpv, cmd);
-
-				g_free(path);
-			}
-			else
-			{
-				mpv_obj_load(	app->mpv,
-						uri_list[i],
-						(append || i != 0),
-						TRUE );
-			}
-		}
+		mpv_obj_load_list(	app->mpv,
+					(const gchar **)uri_list,
+					append,
+					TRUE );
 
 		g_strfreev(uri_list);
 	}
@@ -916,40 +908,15 @@ static gint64 get_xid(GtkWidget *widget)
 #endif
 }
 
-static gboolean load_files(gpointer data)
+static gboolean load_files(Application *app, const gchar **files)
 {
-	Application *app = data;
 	MpvObjState state;
 
 	mpv_obj_get_state(app->mpv, &state);
 
-	if(app->files)
+	if(files)
 	{
-		gint i = 0;
-
-		mpv_obj_set_property_flag(app->mpv, "pause", FALSE);
-		playlist_clear(app->playlist_store);
-
-		for(i = 0; app->files[i]; i++)
-		{
-			gchar *name = get_name_from_path(app->files[i]);
-
-			if(state.init_load)
-			{
-				playlist_append(	app->playlist_store,
-							name,
-							app->files[i] );
-			}
-			else
-			{
-				mpv_obj_load(	app->mpv,
-						app->files[i],
-						(i != 0),
-						TRUE );
-			}
-
-			g_free(name);
-		}
+		mpv_obj_load_list(app->mpv, files, FALSE, TRUE);
 
 		g_strfreev(app->files);
 	}

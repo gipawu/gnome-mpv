@@ -17,6 +17,8 @@
  * along with GNOME MPV.  If not, see <http://www.gnu.org/licenses/>.
  */
 
+#include <glib/gi18n.h>
+
 #include "def.h"
 #include "menu.h"
 #include "application.h"
@@ -217,17 +219,13 @@ static gboolean timeout_handler(gpointer data)
 {
 	MainWindow *wnd;
 	ControlBox *control_box;
-	GtkScaleButton *button;
-	GtkWidget *popup;
 
 	wnd = data;
 	control_box = CONTROL_BOX(wnd->control_box);
-	button = GTK_SCALE_BUTTON(control_box->volume_button);
-	popup = gtk_scale_button_get_popup(button);
 
 	if(wnd->fullscreen
 	&& !wnd->fs_control_hover
-	&& !gtk_widget_is_visible(popup))
+	&& !control_box_get_volume_popup_visible(control_box))
 	{
 		GdkWindow *window;
 		GdkCursor *cursor;
@@ -282,6 +280,7 @@ static void main_window_init(MainWindow *wnd)
 	wnd->fullscreen = FALSE;
 	wnd->playlist_visible = FALSE;
 	wnd->fs_control_hover = FALSE;
+	wnd->pre_fs_playlist_visible = FALSE;
 	wnd->playlist_width = PLAYLIST_DEFAULT_WIDTH;
 	wnd->timeout_tag = 0;
 	wnd->settings = gtk_settings_get_default();
@@ -391,7 +390,8 @@ void main_window_set_fullscreen(MainWindow *wnd, gboolean fullscreen)
 					(GTK_APPLICATION_WINDOW(wnd), FALSE);
 			}
 
-			gtk_widget_hide(wnd->playlist);
+			wnd->pre_fs_playlist_visible = wnd->playlist_visible;
+			gtk_widget_set_visible(wnd->playlist, FALSE);
 			timeout_handler(wnd);
 		}
 		else
@@ -418,8 +418,9 @@ void main_window_set_fullscreen(MainWindow *wnd, gboolean fullscreen)
 					(GTK_APPLICATION_WINDOW(wnd), TRUE);
 			}
 
+			wnd->playlist_visible = wnd->pre_fs_playlist_visible;
 			gtk_widget_set_visible
-				(wnd->playlist, wnd->playlist_visible);
+				(wnd->playlist, wnd->pre_fs_playlist_visible);
 
 			cursor =	gdk_cursor_new_from_name
 					(gdk_display_get_default(), "default");
@@ -442,6 +443,7 @@ void main_window_reset(MainWindow *wnd)
 {
 	gtk_window_set_title(GTK_WINDOW(wnd), g_get_application_name());
 	control_box_reset(CONTROL_BOX(wnd->control_box));
+	playlist_set_indicator_pos(PLAYLIST_WIDGET(wnd->playlist)->store, -1);
 }
 
 void main_window_save_state(MainWindow *wnd)

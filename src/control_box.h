@@ -38,37 +38,19 @@ G_BEGIN_DECLS
 #define	IS_CONTROL_BOX_CLASS(klass) \
 	(G_TYPE_CHECK_CLASS_TYPE((klass), CONTROL_BOX_TYPE))
 
-struct _ControlBox
-{
-	GtkBox parent_instance;
-	gint seek_bar_length;
-	GtkWidget *play_button;
-	GtkWidget *stop_button;
-	GtkWidget *forward_button;
-	GtkWidget *rewind_button;
-	GtkWidget *next_button;
-	GtkWidget *previous_button;
-	GtkWidget *volume_button;
-	GtkWidget *fullscreen_button;
-	GtkWidget *seek_bar;
-};
-
-struct _ControlBoxClass
-{
-	GtkBoxClass parent_class;
-};
-
 typedef struct _ControlBox ControlBox;
 typedef struct _ControlBoxClass ControlBoxClass;
-
 
 GtkWidget *control_box_new(void);
 GType control_box_get_type(void);
 void control_box_set_enabled(ControlBox *box, gboolean enabled);
 void control_box_set_chapter_enabled(ControlBox *box, gboolean enabled);
+void control_box_set_volume_enabled(ControlBox *box, gboolean enabled);
+void control_box_set_seek_bar_pos(ControlBox *box, gdouble pos);
 void control_box_set_seek_bar_length(ControlBox *box, gint length);
 void control_box_set_volume(ControlBox *box, gdouble volume);
 gdouble control_box_get_volume(ControlBox *box);
+gboolean control_box_get_volume_popup_visible(ControlBox *box);
 void control_box_set_playing_state(ControlBox *box, gboolean playing);
 void control_box_set_fullscreen_state(ControlBox *box, gboolean fullscreen);
 void control_box_reset(ControlBox *box);

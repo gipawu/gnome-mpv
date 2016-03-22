@@ -724,6 +724,7 @@ static void mpv_obj_init(MpvObj *mpv)
 	mpv->autofit_ratio = -1;
 	mpv->mpv_event_handler = NULL;
 
+	mpv->priv->state.ready = FALSE;
 	mpv->priv->state.paused = TRUE;
 	mpv->priv->state.loaded = FALSE;
 	mpv->priv->state.new_file = TRUE;
@@ -751,58 +752,149 @@ MpvObj *mpv_obj_new(	Playlist *playlist,
 					NULL ));
 }
 
-inline gint mpv_obj_command(MpvObj *mpv, const gchar **cmd)
+gint mpv_obj_command(MpvObj *mpv, const gchar **cmd)
 {
-	return mpv_command(mpv->mpv_ctx, cmd);
+	gint rc;
+
+	rc = mpv_command(mpv->mpv_ctx, cmd);
+
+	if(rc < 0)
+	{
+		gchar *cmd_str = g_strjoinv(" ", (gchar **)cmd);
+
+		g_warning(	"Failed to run mpv command \"%s\". Reason: %s",
+				cmd_str,
+				mpv_error_string(rc) );
+
+		g_free(cmd_str);
+	}
+
+	return rc;
 }
 
-inline gint mpv_obj_command_string(MpvObj *mpv, const gchar *cmd)
+gint mpv_obj_command_string(MpvObj *mpv, const gchar *cmd)
 {
-	return mpv_command_string(mpv->mpv_ctx, cmd);
+	gint rc;
+
+	rc = mpv_command_string(mpv->mpv_ctx, cmd);
+
+	if(rc < 0)
+	{
+		g_warning(	"Failed to run mpv command string \"%s\". "
+				"Reason: %s",
+				cmd,
+				mpv_error_string(rc) );
+	}
+
+	return rc;
 }
 
-inline gint mpv_obj_get_property(	MpvObj *mpv,
-					const gchar *name,
-					mpv_format format,
-					void *data )
+gint mpv_obj_get_property(	MpvObj *mpv,
+				const gchar *name,
+				mpv_format format,
+				void *data )
 {
-	return mpv_get_property(mpv->mpv_ctx, name, format, data);
+	gint rc;
+
+	rc = mpv_get_property(mpv->mpv_ctx, name, format, data);
+
+	if(rc < 0)
+	{
+		g_info(	"Failed to retrieve property \"%s\" "
+			"using mpv format %d. Reason %s",
+			name,
+			format,
+			mpv_error_string(rc) );
+	}
+
+	return rc;
 }
 
-inline gchar *mpv_obj_get_property_string(MpvObj *mpv, const gchar *name)
+gchar *mpv_obj_get_property_string(MpvObj *mpv, const gchar *name)
 {
-	return mpv_get_property_string(mpv->mpv_ctx, name);
-}
+	gchar *value = mpv_get_property_string(mpv->mpv_ctx, name);
 
-inline gboolean mpv_obj_get_property_flag(MpvObj *mpv, const gchar *name)
-{
-	gboolean value;
-
-	mpv_get_property(mpv->mpv_ctx, name, MPV_FORMAT_FLAG, &value);
+	if(!value)
+	{
+		g_info("Failed to retrieve property \"%s\" as string.", name);
+	}
 
 	return value;
 }
 
-inline gint mpv_obj_set_property(	MpvObj *mpv,
-					const gchar *name,
-					mpv_format format,
-					void *data )
+gboolean mpv_obj_get_property_flag(MpvObj *mpv, const gchar *name)
 {
-	return mpv_set_property(mpv->mpv_ctx, name, format, data);
+	gboolean value = FALSE;
+	gint rc;
+
+	rc = mpv_get_property(mpv->mpv_ctx, name, MPV_FORMAT_FLAG, &value);
+
+	if(rc < 0)
+	{
+		g_info(	"Failed to retrieve property \"%s\" as flag. "
+			"Reason: %s",
+			name,
+			mpv_error_string(rc) );
+	}
+
+	return value;
 }
 
-inline gint mpv_obj_set_property_string(	MpvObj *mpv,
-						const gchar *name,
-						const char *data )
+gint mpv_obj_set_property(	MpvObj *mpv,
+				const gchar *name,
+				mpv_format format,
+				void *data )
 {
-	return mpv_set_property_string(mpv->mpv_ctx, name, data);
+	gint rc;
+
+	rc = mpv_set_property(mpv->mpv_ctx, name, format, data);
+
+	if(rc < 0)
+	{
+		g_info(	"Failed to set property \"%s\" using mpv format %d. "
+			"Reason: %s",
+			name,
+			format,
+			mpv_error_string(rc) );
+	}
+
+	return rc;
 }
 
-inline gint mpv_obj_set_property_flag(	MpvObj *mpv,
+gint mpv_obj_set_property_string(	MpvObj *mpv,
 					const gchar *name,
-					gboolean value )
+					const char *data )
 {
-	return mpv_set_property(mpv->mpv_ctx, name, MPV_FORMAT_FLAG, &value);
+	gint rc;
+
+	rc = mpv_set_property_string(mpv->mpv_ctx, name, data);
+
+	if(rc < 0)
+	{
+		g_info(	"Failed to set property \"%s\" as string. Reason: %s",
+			name,
+			mpv_error_string(rc) );
+	}
+
+	return rc;
+}
+
+gint mpv_obj_set_property_flag(	MpvObj *mpv,
+				const gchar *name,
+				gboolean value )
+{
+	gint rc;
+
+	rc = mpv_set_property(mpv->mpv_ctx, name, MPV_FORMAT_FLAG, &value);
+
+	if(rc < 0)
+	{
+		g_info(	"Failed to set property \"%s\" as flag. Reason: %s",
+			name,
+			mpv_error_string(rc) );
+	}
+
+	return rc;
 }
 
 void mpv_obj_set_wakup_callback(	MpvObj *mpv,
@@ -987,6 +1079,8 @@ void mpv_obj_initialize(MpvObj *mpv)
 #endif
 
 	mpv_opt_handle_msg_level(mpv);
+
+	mpv->priv->state.ready = TRUE;
 	g_signal_emit_by_name(mpv, "mpv-init");
 
 	g_clear_object(&main_settings);
@@ -998,24 +1092,26 @@ void mpv_obj_initialize(MpvObj *mpv)
 void mpv_obj_reset(MpvObj *mpv)
 {
 	const gchar *quit_cmd[] = {"quit_watch_later", NULL};
+	gchar *loop_str;
+	gboolean loop;
 	gint64 playlist_pos;
-	gdouble time_pos;
 	gint playlist_pos_rc;
-	gint time_pos_rc;
 
 	mpv_check_error(mpv_obj_set_property_string(mpv, "pause", "yes"));
+
+	loop_str = mpv_obj_get_property_string(mpv, "loop");
+	loop = (g_strcmp0(loop_str, "inf") == 0);
+
+	mpv_free(loop_str);
 
 	playlist_pos_rc = mpv_get_property(	mpv->mpv_ctx,
 						"playlist-pos",
 						MPV_FORMAT_INT64,
 						&playlist_pos );
 
-	time_pos_rc = mpv_get_property(	mpv->mpv_ctx,
-					"time-pos",
-					MPV_FORMAT_DOUBLE,
-					&time_pos );
-
 	/* Reset mpv->mpv_ctx */
+	mpv->priv->state.ready = FALSE;
+
 	mpv_check_error(mpv_obj_command(mpv, quit_cmd));
 	mpv_obj_quit(mpv);
 
@@ -1031,6 +1127,10 @@ void mpv_obj_reset(MpvObj *mpv)
 		(	mpv,
 			mpv->priv->opengl_cb_callback,
 			mpv->priv->opengl_cb_callback_data );
+
+	mpv_obj_set_property_string(	mpv,
+					"loop",
+					loop?"inf":"no" );
 
 	if(mpv->playlist)
 	{
@@ -1055,14 +1155,6 @@ void mpv_obj_reset(MpvObj *mpv)
 						"playlist-pos",
 						MPV_FORMAT_INT64,
 						&playlist_pos );
-		}
-
-		if(time_pos_rc >= 0 && time_pos > 0)
-		{
-			mpv_obj_set_property(	mpv,
-						"time-pos",
-						MPV_FORMAT_DOUBLE,
-						&time_pos );
 		}
 
 		mpv_obj_set_property(	mpv,
@@ -1112,7 +1204,7 @@ void mpv_obj_load(	MpvObj *mpv,
 	empty = !gtk_tree_model_get_iter_first
 			(GTK_TREE_MODEL(playlist_store), &iter);
 
-	load_cmd[2] = (append && !empty)?"append-play":"replace";
+	load_cmd[2] = (append && !empty)?"append":"replace";
 
 	if(!append && uri && update)
 	{
@@ -1126,6 +1218,8 @@ void mpv_obj_load(	MpvObj *mpv,
 	{
 		gboolean append = FALSE;
 		gboolean rc;
+
+		mpv_obj_set_property_flag(mpv, "pause", FALSE);
 
 		rc = gtk_tree_model_get_iter_first
 			(GTK_TREE_MODEL(playlist_store), &iter);
@@ -1185,5 +1279,64 @@ void mpv_obj_load(	MpvObj *mpv,
 							1 ));
 
 		g_free(path);
+	}
+}
+
+void mpv_obj_load_list(	MpvObj *mpv,
+			const gchar **uri_list,
+			gboolean append,
+			gboolean update )
+{
+	static const char *const sub_exts[]
+		= {	"utf", "utf8", "utf-8", "idx", "sub", "srt", "smi",
+			"rt", "txt", "ssa", "aqt", "jss", "js", "ass", "mks",
+			"vtt", "sup", NULL };
+
+	for(gint i = 0; uri_list[i]; i++)
+	{
+		const gchar *ext = strrchr(uri_list[i], '.');
+		gint j;
+
+		/* Only start checking the extension if there is at
+		 * least one character after the dot.
+		 */
+		if(ext && ++ext)
+		{
+			for(	j = 0;
+				sub_exts[j] &&
+				g_strcmp0(ext, sub_exts[j]) != 0;
+				j++ );
+		}
+
+		/* Only attempt to load file as subtitle if there
+		 * already is a file loaded. Try to load the file as a
+		 * media file otherwise.
+		 */
+		if(ext && sub_exts[j] && mpv_obj_is_loaded(mpv))
+		{
+			const gchar *cmd[] = {"sub-add", NULL, NULL};
+			gchar *path;
+
+			/* Convert to path if possible to get rid of
+			 * percent encoding.
+			 */
+			path =	g_filename_from_uri
+				(uri_list[i], NULL, NULL);
+
+			cmd[1] = path?:uri_list[i];
+
+			mpv_obj_command(mpv, cmd);
+
+			g_free(path);
+		}
+		else
+		{
+			gboolean empty = playlist_empty(mpv->playlist);
+
+			mpv_obj_load(	mpv,
+					uri_list[i],
+					((append && !empty) || i != 0),
+					TRUE );
+		}
 	}
 }

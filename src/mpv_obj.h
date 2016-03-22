@@ -49,6 +49,7 @@ typedef struct _MpvObjClass MpvObjClass;
 
 struct _MpvObjState
 {
+	gboolean ready;
 	gboolean paused;
 	gboolean loaded;
 	gboolean new_file;
@@ -109,6 +110,10 @@ void mpv_obj_reset(MpvObj *mpv);
 void mpv_obj_quit(MpvObj *mpv);
 void mpv_obj_load(	MpvObj *mpv,
 			const gchar *uri,
+			gboolean append,
+			gboolean update );
+void mpv_obj_load_list(	MpvObj *mpv,
+			const gchar **uri_list,
 			gboolean append,
 			gboolean update );
 
