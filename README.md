@@ -14,9 +14,9 @@ capabilities.
 - intltool (build)
 - python2 (build)
 - glib2 >= 2.40
-- gtk3 >= 3.16 (or gtk3 >= 3.14 if opengl-cb is disabled)
+- gtk3 >= 3.20
 - mpv >= 0.16
-- epoxy (only if opengl-cb is enabled)
+- epoxy
 - youtube-dl (optional)
 
 ## Installation
@@ -26,8 +26,7 @@ capabilities.
 - Arch Linux (Git): https://aur.archlinux.org/packages/gnome-mpv-git
 - Debian testing: https://packages.debian.org/testing/gnome-mpv
 - Debian unstable: https://packages.debian.org/sid/gnome-mpv
-- Fedora (Copr): https://copr.fedoraproject.org/coprs/region51/gnome-mpv/
-- Fedora (russianfedora): http://ru.fedoracommunity.org/repository
+- Fedora (russianfedora): http://koji.russianfedora.pro/koji/packageinfo?packageID=155
 - Fedora/OpenSUSE: https://build.opensuse.org/package/show/home:mermoldy:multimedia/gnome-mpv
 - Gentoo: http://gpo.zugaina.org/media-video/gnome-mpv
 - Solus: https://packages.solus-project.com/v1/g/gnome-mpv/
