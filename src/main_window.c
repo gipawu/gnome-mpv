@@ -692,12 +692,10 @@ void main_window_set_playlist_visible(MainWindow *wnd, gboolean visible)
 {
 	if(visible != wnd->playlist_visible && !wnd->fullscreen)
 	{
-		gboolean maximized;
 		gint handle_pos;
 		gint width;
 		gint height;
 
-		maximized = gtk_window_is_maximized(GTK_WINDOW(wnd));
 		handle_pos =	gtk_paned_get_position
 				(GTK_PANED(wnd->vid_area_paned));
 
@@ -705,28 +703,18 @@ void main_window_set_playlist_visible(MainWindow *wnd, gboolean visible)
 
 		if(wnd->priv->playlist_first_toggle && visible)
 		{
-			gint new_pos = width-(maximized?wnd->playlist_width:0);
+			gint new_pos = width - wnd->playlist_width;
 
 			gtk_paned_set_position(	GTK_PANED(wnd->vid_area_paned),
 						new_pos );
 		}
-		else if(!visible)
+		if(!visible)
 		{
 			wnd->playlist_width = width-handle_pos;
 		}
 
-
 		wnd->playlist_visible = visible;
 		gtk_widget_set_visible(wnd->playlist, visible);
-
-		if(!maximized)
-		{
-			gtk_window_resize(	GTK_WINDOW(wnd),
-						visible?
-						width+wnd->playlist_width:
-						handle_pos,
-						height );
-		}
 
 		wnd->priv->playlist_first_toggle = FALSE;
 	}
