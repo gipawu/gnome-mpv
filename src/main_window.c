@@ -552,7 +552,7 @@ void main_window_load_state(MainWindow *wnd)
 		wnd->playlist_visible
 			= g_settings_get_boolean(settings, "show-playlist");
 		volume = g_settings_get_double(settings, "volume");
-		handle_pos = width-(wnd->playlist_visible?wnd->playlist_width:0);
+		handle_pos = width - wnd->playlist_width;
 
 		control_box_set_volume(CONTROL_BOX(wnd->control_box), volume);
 		gtk_widget_set_visible(wnd->playlist, wnd->playlist_visible);
