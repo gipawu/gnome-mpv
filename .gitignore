@@ -38,9 +38,9 @@ po/stamp-it
 .deps/
 .libs/
 data/*.valid
-data/io.github.GnomeMpv.appdata.xml
-data/io.github.GnomeMpv.desktop
-data/io.github.GnomeMpv.gschema.xml
+data/org.gnome.GnomeMpv.appdata.xml
+data/org.gnome.GnomeMpv.desktop
+data/org.gnome.GnomeMpv.gschema.xml
 po/gnome-mpv.pot
 po/*.gmo
 po/.intltool-merge-cache
