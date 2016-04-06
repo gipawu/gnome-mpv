@@ -209,11 +209,7 @@ static gboolean mpv_event_handler(gpointer data)
 		}
 		else if(event->event_id == MPV_EVENT_IDLE)
 		{
-			if(mpv->priv->state.init_load)
-			{
-				mpv_obj_load(mpv, NULL, FALSE, FALSE);
-			}
-			else if(mpv->priv->state.loaded)
+			if(mpv->priv->state.loaded)
 			{
 				mpv->priv->state.loaded = FALSE;
 
@@ -959,7 +955,7 @@ void mpv_obj_initialize(MpvObj *mpv)
 			{"title", "${media-title}"},
 			{"autofit-larger", "75%"},
 			{"window-scale", "1"},
-			{"pause", "yes"},
+			{"pause", "no"},
 			{"ytdl", "yes"},
 			{"input-cursor", "no"},
 			{"cursor-autohide", "no"},
@@ -1205,7 +1201,10 @@ void mpv_obj_load(	MpvObj *mpv,
 		gboolean append = FALSE;
 		gboolean rc;
 
-		mpv_obj_set_property_flag(mpv, "pause", FALSE);
+		if(!mpv->priv->state.init_load)
+		{
+			mpv_obj_set_property_flag(mpv, "pause", FALSE);
+		}
 
 		rc = gtk_tree_model_get_iter_first
 			(GTK_TREE_MODEL(playlist_store), &iter);
@@ -1242,7 +1241,10 @@ void mpv_obj_load(	MpvObj *mpv,
 		{
 			mpv->priv->state.loaded = FALSE;
 
-			mpv_obj_set_property_flag(mpv, "pause", FALSE);
+			if(!mpv->priv->state.init_load)
+			{
+				mpv_obj_set_property_flag(mpv, "pause", FALSE);
+			}
 		}
 
 		if(update)
