@@ -708,7 +708,7 @@ void main_window_set_playlist_visible(MainWindow *wnd, gboolean visible)
 			gtk_paned_set_position(	GTK_PANED(wnd->vid_area_paned),
 						new_pos );
 		}
-		if(!visible)
+		else if(!visible)
 		{
 			wnd->playlist_width = width-handle_pos;
 		}
