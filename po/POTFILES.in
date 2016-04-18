@@ -1,4 +1,3 @@
-[type: gettext/gsettings]data/org.gnome-mpv.gschema.xml.in
 [type: gettext/gsettings]data/io.github.GnomeMpv.gschema.xml.in
 [type: gettext/xml]data/io.github.GnomeMpv.appdata.xml.in
 [type: gettext/ini]data/io.github.GnomeMpv.desktop.in
@@ -13,5 +12,7 @@ src/mpv_obj.c
 src/open_loc_dialog.c
 src/playlist.c
 src/playlist_widget.c
+src/plugins_manager.c
+src/plugins_manager_item.c
 src/pref_dialog.c
 src/shortcuts_window.c
