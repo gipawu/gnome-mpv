@@ -46,6 +46,6 @@ po/*.gmo
 po/.intltool-merge-cache
 .dirstamp
 src/gnome-mpv
-src/authors.h
-src/marshal.*
-src/mpris/mpris_gdbus.*
+src/gmpv_authors.h
+src/gmpv_marshal.*
+src/mpris/gmpv_mpris_gdbus.*
