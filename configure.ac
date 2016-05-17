@@ -6,7 +6,7 @@ AC_INIT(	[gnome-mpv],
 		[gnome-mpv],
 		[http://github.com/gnome-mpv/gnome-mpv] )
 
-AC_CONFIG_SRCDIR([src/main.c])
+AC_CONFIG_SRCDIR([src/gmpv_main.c])
 AC_CONFIG_MACRO_DIR([m4])
 AC_USE_SYSTEM_EXTENSIONS
 AM_INIT_AUTOMAKE([1.12 tar-pax dist-xz no-dist-gzip subdir-objects foreign -Wall -Wno-portability])
@@ -83,10 +83,20 @@ AS_IF([test "x$GLIB_GENMARSHAL" = "x"], [
 	AC_MSG_ERROR([Could not find glib-genmarshal])
 ])
 
-PKG_CHECK_MODULES(DEPS, [gtk+-3.0 >= 3.20 glib-2.0 >= 2.40 mpv >= 1.20 epoxy])
+PKG_CHECK_MODULES(DEPS, [gtk+-3.0 glib-2.0 >= 2.44 mpv >= 1.20 epoxy])
 
-AC_DEFINE([GLIB_VERSION_MIN_REQUIRED], [GLIB_VERSION_2_40], [Dont warn using older APIs])
-AC_DEFINE([GLIB_VERSION_MAX_ALLOWED], [GLIB_VERSION_2_40], [Prevents using newer APIs])
+AC_DEFINE([GLIB_VERSION_MIN_REQUIRED], [GLIB_VERSION_2_44], [Dont warn using older APIs])
+AC_DEFINE([GLIB_VERSION_MAX_ALLOWED], [GLIB_VERSION_2_44], [Prevents using newer APIs])
+
+AM_CONDITIONAL([NEW_GTK], PKG_CHECK_EXISTS([gtk+-3.0 >= 3.20], true, false))
+
+AM_COND_IF([NEW_GTK],[
+	AC_DEFINE([GDK_VERSION_MIN_REQUIRED], [GDK_VERSION_3_20], [Dont warn using older APIs])
+	AC_DEFINE([GDK_VERSION_MAX_ALLOWED], [GDK_VERSION_3_20], [Prevents using newer APIs])
+],[
+	AC_DEFINE([GDK_VERSION_MIN_REQUIRED], [GDK_VERSION_3_18], [Dont warn using older APIs])
+	AC_DEFINE([GDK_VERSION_MAX_ALLOWED], [GDK_VERSION_3_18], [Prevents using newer APIs])
+])
 
 # Checks for header files.
 AC_CHECK_HEADERS([string.h stdio.h stdlib.h locale.h ctype.h execinfo.h],[],[
