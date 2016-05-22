@@ -296,12 +296,6 @@ static void mpv_obj_update_playlist(GmpvMpvObj *mpv)
 				title = value.u.string;
 			}
 		}
-		else if(prop_count == 2)
-		{
-			title = mpv_playlist.u.list
-				->values[i].u.list
-				->values[1].u.string;
-		}
 
 		name = title?g_strdup(title):get_name_from_path(uri);
 
