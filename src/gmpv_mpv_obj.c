@@ -156,7 +156,7 @@ static gboolean mpv_event_handler(gpointer data)
 
 			g_signal_emit_by_name(	mpv,
 						"mpv-prop-change",
-						g_strdup(prop->name) );
+						prop->name );
 		}
 		else if(event->event_id == MPV_EVENT_IDLE)
 		{
@@ -203,6 +203,8 @@ static gboolean mpv_event_handler(gpointer data)
 				gmpv_mpv_obj_set_property_flag
 					(mpv, "pause", TRUE);
 				g_signal_emit_by_name(mpv, "mpv-error", msg);
+
+				g_free(msg);
 			}
 		}
 		else if(event->event_id == MPV_EVENT_VIDEO_RECONFIG)
@@ -273,24 +275,26 @@ static void mpv_obj_update_playlist(GmpvMpvObj *mpv)
 
 	for(i = 0; i < playlist_count; i++)
 	{
-		gint prop_count = mpv_playlist.u.list->values[i].u.list->num;
+		mpv_node_list *prop_list = mpv_playlist.u.list->values[i].u.list;
 		gchar *uri = NULL;
 		gchar *title = NULL;
 		gchar *name = NULL;
-		gchar *old_name = NULL;
-		gchar *old_uri = NULL;
 
-		/* The first entry must always exist */
-		uri =	mpv_playlist.u.list
-			->values[i].u.list
-			->values[0].u.string;
-
-		/* Try retrieving the title from mpv playlist */
-		if(prop_count >= 4)
+		for(gint j = 0; j < prop_list->num; j++)
 		{
-			title = mpv_playlist.u.list
-				->values[i].u.list
-				->values[3].u.string;
+			const gchar *key = prop_list->keys[j];
+			const mpv_node value = prop_list->values[j];
+
+			if(g_strcmp0(key, "filename") == 0)
+			{
+				g_assert(value.format == MPV_FORMAT_STRING);
+				uri = value.u.string;
+			}
+			else if(g_strcmp0(key, "title") == 0)
+			{
+				g_assert(value.format == MPV_FORMAT_STRING);
+				title = value.u.string;
+			}
 		}
 		else if(prop_count == 2)
 		{
@@ -301,21 +305,35 @@ static void mpv_obj_update_playlist(GmpvMpvObj *mpv)
 
 		name = title?g_strdup(title):get_name_from_path(uri);
 
+		/* Overwrite current entry if it doesn't match the new value */
 		if(!iter_end)
 		{
+			gchar *old_name = NULL;
+			gchar *old_uri = NULL;
+			gboolean name_update;
+			gboolean uri_update;
+
 			gtk_tree_model_get
 				(	GTK_TREE_MODEL(store), &iter,
 					PLAYLIST_NAME_COLUMN, &old_name,
 					PLAYLIST_URI_COLUMN, &old_uri, -1 );
 
-			if(g_strcmp0(name, old_name) != 0)
+			name_update = (g_strcmp0(name, old_name) != 0);
+			uri_update = (g_strcmp0(uri, old_uri) != 0);
+
+			/* Only set the name if either the title can be
+			 * retrieved or the name is unset. This preserves the
+			 * correct title if it becomes unavailable later such as
+			 * when restarting mpv.
+			 */
+			if(name_update && (!old_name || title || uri_update))
 			{
 				gtk_list_store_set
 					(	store, &iter,
 						PLAYLIST_NAME_COLUMN, name, -1 );
 			}
 
-			if(g_strcmp0(uri, old_uri) != 0)
+			if(uri_update)
 			{
 				gtk_list_store_set
 					(	store, &iter,
@@ -565,7 +583,6 @@ static void gmpv_mpv_obj_class_init(GmpvMpvObjClass* klass)
 			G_MAXINT64,
 			-1,
 			G_PARAM_READWRITE );
-
 	g_object_class_install_property(obj_class, PROP_WID, pspec);
 
 	pspec = g_param_spec_pointer
@@ -573,7 +590,6 @@ static void gmpv_mpv_obj_class_init(GmpvMpvObjClass* klass)
 			"Playlist",
 			"GmpvPlaylist to use for storage",
 			G_PARAM_READWRITE );
-
 	g_object_class_install_property(obj_class, PROP_PLAYLIST, pspec);
 
 	g_signal_new(	"mpv-init",
@@ -585,7 +601,6 @@ static void gmpv_mpv_obj_class_init(GmpvMpvObjClass* klass)
 			g_cclosure_marshal_VOID__VOID,
 			G_TYPE_NONE,
 			0 );
-
 	g_signal_new(	"mpv-error",
 			G_TYPE_FROM_CLASS(klass),
 			G_SIGNAL_RUN_FIRST,
@@ -596,7 +611,6 @@ static void gmpv_mpv_obj_class_init(GmpvMpvObjClass* klass)
 			G_TYPE_NONE,
 			1,
 			G_TYPE_STRING );
-
 	g_signal_new(	"mpv-playback-restart",
 			G_TYPE_FROM_CLASS(klass),
 			G_SIGNAL_RUN_FIRST,
@@ -606,7 +620,6 @@ static void gmpv_mpv_obj_class_init(GmpvMpvObjClass* klass)
 			g_cclosure_marshal_VOID__VOID,
 			G_TYPE_NONE,
 			0 );
-
 	g_signal_new(	"mpv-event",
 			G_TYPE_FROM_CLASS(klass),
 			G_SIGNAL_RUN_FIRST,
@@ -617,7 +630,6 @@ static void gmpv_mpv_obj_class_init(GmpvMpvObjClass* klass)
 			G_TYPE_NONE,
 			1,
 			G_TYPE_INT );
-
 	g_signal_new(	"mpv-prop-change",
 			G_TYPE_FROM_CLASS(klass),
 			G_SIGNAL_RUN_FIRST,
@@ -989,7 +1001,7 @@ void gmpv_mpv_obj_initialize(GmpvMpvObj *mpv)
 		const gchar *msg
 			= _("Failed to apply one or more MPV options.");
 
-		g_signal_emit_by_name(mpv, "mpv-error", g_strdup(msg));
+		g_signal_emit_by_name(mpv, "mpv-error", msg);
 	}
 
 	if(mpv->force_opengl)
@@ -1029,7 +1041,6 @@ void gmpv_mpv_obj_initialize(GmpvMpvObj *mpv)
 		mpv->force_opengl = TRUE;
 		mpv->state.paused = FALSE;
 
-		mpv_free(current_vo);
 		gmpv_mpv_obj_reset(mpv);
 	}
 	else
@@ -1043,6 +1054,7 @@ void gmpv_mpv_obj_initialize(GmpvMpvObj *mpv)
 		}
 
 		gmpv_mpv_opt_handle_msg_level(mpv);
+		gmpv_mpv_opt_handle_fs(mpv);
 
 		mpv->force_opengl = FALSE;
 		mpv->state.ready = TRUE;
@@ -1053,6 +1065,7 @@ void gmpv_mpv_obj_initialize(GmpvMpvObj *mpv)
 	g_clear_object(&win_settings);
 	g_free(config_dir);
 	g_free(mpvopt);
+	mpv_free(current_vo);
 }
 
 void gmpv_mpv_obj_reset(GmpvMpvObj *mpv)
