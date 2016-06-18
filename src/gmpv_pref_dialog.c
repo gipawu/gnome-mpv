@@ -32,7 +32,6 @@ struct _GmpvPrefDialog
 	GtkDialog parent_instance;
 	GSettings *settings;
 	GtkWidget *notebook;
-	GtkWidget *grid;
 };
 
 struct _GmpvPrefDialogClass
@@ -254,7 +253,11 @@ static void pref_dialog_constructed(GObject *obj)
 
 	if(!csd_enabled)
 	{
-		gtk_widget_set_margin_bottom(GMPV_PREF_DIALOG(obj)->grid, 12);
+		GtkWidget *content_area =	gtk_dialog_get_content_area
+						(GTK_DIALOG(obj));
+
+		gtk_widget_set_margin_bottom(content_area, 12);
+		gtk_widget_set_margin_bottom(GMPV_PREF_DIALOG(obj)->notebook, 6);
 	}
 
 	G_OBJECT_CLASS(gmpv_pref_dialog_parent_class)->constructed(obj);
@@ -305,6 +308,9 @@ static void gmpv_pref_dialog_init(GmpvPrefDialog *dlg)
 			{_("<b>Miscellaneous</b>"),
 			NULL,
 			ITEM_TYPE_GROUP},
+			{_("Allow multiple instances"),
+			"multiple-instances-enable",
+			ITEM_TYPE_CHECK_BOX},
 			{_("Extra MPV options:"),
 			NULL,
 			ITEM_TYPE_LABEL},

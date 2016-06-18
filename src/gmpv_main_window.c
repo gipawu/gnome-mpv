@@ -438,9 +438,9 @@ void gmpv_main_window_load_state(GmpvMainWindow *wnd)
 }
 
 void gmpv_main_window_update_track_list(	GmpvMainWindow *wnd,
-					const GSList *audio_list,
-					const GSList *video_list,
-					const GSList *sub_list )
+						const GSList *audio_list,
+						const GSList *video_list,
+						const GSList *sub_list )
 {
 	if(gmpv_main_window_get_csd_enabled(wnd))
 	{
@@ -471,8 +471,8 @@ void gmpv_main_window_update_track_list(	GmpvMainWindow *wnd,
 }
 
 void gmpv_main_window_resize_video_area(	GmpvMainWindow *wnd,
-					gint width,
-					gint height )
+						gint width,
+						gint height )
 {
 	g_signal_connect(	wnd->vid_area,
 				"size-allocate",
@@ -487,7 +487,7 @@ void gmpv_main_window_resize_video_area(	GmpvMainWindow *wnd,
 	 * size_allocate_handler() will be called so that the event handler will
 	 * be disconnected.
 	 */
-#if (GTK_MAJOR_VERSION >= 3 && GTK_MINOR_VERSION >= 20)
+#if GTK_CHECK_VERSION(3, 20, 0)
 	gtk_widget_queue_allocate(wnd->vid_area);
 #else
 	gtk_widget_queue_resize(wnd->vid_area);
@@ -507,7 +507,7 @@ void gmpv_main_window_enable_csd(GmpvMainWindow *wnd)
 	open_icon = g_themed_icon_new_with_default_fallbacks
 				("list-add-symbolic");
 	menu_icon = g_themed_icon_new_with_default_fallbacks
-				("view-list-symbolic");
+				("open-menu-symbolic");
 
 	wnd->playlist_width = PLAYLIST_DEFAULT_WIDTH;
 	wnd->open_hdr_btn = gtk_menu_button_new();
@@ -552,7 +552,8 @@ gboolean gmpv_main_window_get_csd_enabled(GmpvMainWindow *wnd)
 	return	wnd->open_hdr_btn && wnd->menu_hdr_btn;
 }
 
-void gmpv_main_window_set_playlist_visible(GmpvMainWindow *wnd, gboolean visible)
+void gmpv_main_window_set_playlist_visible(	GmpvMainWindow *wnd,
+						gboolean visible )
 {
 	if(visible != wnd->playlist_visible && !wnd->fullscreen)
 	{
@@ -568,6 +569,13 @@ void gmpv_main_window_set_playlist_visible(GmpvMainWindow *wnd, gboolean visible
 		if(wnd->playlist_first_toggle && visible)
 		{
 			gint new_pos = width - wnd->playlist_width;
+
+#if !GTK_CHECK_VERSION(3, 20, 0)
+			/* Workaround for window sizing bug affecting
+			 * GTK+ < 3.20
+			 */
+			new_pos -= 52;
+#endif
 
 			gtk_paned_set_position(	GTK_PANED(wnd->vid_area_paned),
 						new_pos );

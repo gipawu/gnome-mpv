@@ -51,6 +51,7 @@
 struct _GmpvApplication
 {
 	GtkApplication parent;
+	gboolean no_existing_session;
 	GmpvMpvObj *mpv;
 	gchar **files;
 	guint inhibit_cookie;
@@ -70,6 +71,12 @@ static void *get_proc_address(void *fn_ctx, const gchar *name);
 static gboolean vid_area_render_handler(	GtkGLArea *area,
 						GdkGLContext *context,
 						gpointer data );
+static gint options_handler(	GApplication *gapp,
+				GVariantDict *options,
+				gpointer data );
+static gint command_line_handler(	GApplication *app,
+					GApplicationCommandLine *cli,
+					gpointer data );
 static void startup_handler(GApplication *gapp, gpointer data);
 static void activate_handler(GApplication *gapp, gpointer data);
 static void open_handler(	GApplication *gapp,
@@ -114,11 +121,16 @@ static gboolean key_release_handler(	GtkWidget *widget,
 static gboolean mouse_press_handler(	GtkWidget *widget,
 					GdkEvent *event,
 					gpointer data );
+static gboolean scroll_handler(	GtkWidget *widget,
+				GdkEvent *event,
+				gpointer data );
 static gboolean queue_render(GtkGLArea *area);
 static void opengl_cb_update_callback(void *cb_ctx);
 static void set_playlist_pos(GmpvApplication *app, gint64 pos);
 static void set_inhibit_idle(GmpvApplication *app, gboolean inhibit);
-static gboolean load_files(GmpvApplication* app, const gchar **files);
+static gboolean load_files(	GmpvApplication* app,
+				const gchar **files,
+				gboolean append );
 static void connect_signals(GmpvApplication *app);
 static inline void add_accelerator(	GtkApplication *app,
 					const char *accel,
@@ -178,6 +190,69 @@ static gboolean vid_area_render_handler(	GtkGLArea *area,
 	}
 
 	return TRUE;
+}
+
+static gint options_handler(	GApplication *gapp,
+				GVariantDict *options,
+				gpointer data )
+{
+	GmpvApplication *app = data;
+	GSettings *settings = g_settings_new(CONFIG_ROOT);
+
+	g_variant_dict_lookup(	options,
+				"no-existing-session",
+				"b",
+				&app->no_existing_session );
+
+	app->no_existing_session |=	g_settings_get_boolean
+					(	settings,
+						"multiple-instances-enable" );
+
+	if(app->no_existing_session)
+	{
+		GApplicationFlags flags = g_application_get_flags(gapp);
+
+		g_info("Single instance negotiation is disabled");
+		g_application_set_flags(gapp, flags|G_APPLICATION_NON_UNIQUE);
+	}
+
+	g_clear_object(&settings);
+
+	return -1;
+}
+
+static gint command_line_handler(	GApplication *app,
+					GApplicationCommandLine *cli,
+					gpointer data )
+{
+	gint argc = 1;
+	gchar **argv = g_application_command_line_get_arguments(cli, &argc);
+	GVariantDict *options = g_application_command_line_get_options_dict(cli);
+	gboolean enqueue = FALSE;
+	const gint n_files = argc-1;
+	GFile *files[n_files];
+
+	g_variant_dict_lookup(options, "enqueue", "b", &enqueue);
+
+	for(gint i = 0; i < n_files; i++)
+	{
+		files[i] =	g_application_command_line_create_file_for_arg
+				(cli, argv[i+1]);
+	}
+
+	if(n_files > 0)
+	{
+		g_application_open(app, files, n_files, enqueue?"enqueue":"");
+	}
+
+	for(gint i = 0; i < n_files; i++)
+	{
+		g_object_unref(files[i]);
+	}
+
+	g_strfreev(argv);
+
+	return 0;
 }
 
 static void startup_handler(GApplication *gapp, gpointer data)
@@ -325,7 +400,7 @@ static void mpv_init_handler(GmpvMpvObj *mpv, gpointer data)
 	}
 
 	mpv_free(current_vo);
-	load_files(app, (const gchar **)app->files);
+	load_files(app, (const gchar **)app->files, FALSE);
 }
 
 static void open_handler(	GApplication *gapp,
@@ -335,6 +410,7 @@ static void open_handler(	GApplication *gapp,
 				gpointer data )
 {
 	GmpvApplication *app = data;
+	gboolean append = (g_strcmp0(hint, "enqueue") == 0);
 	gint i;
 
 	if(n_files > 0)
@@ -354,7 +430,7 @@ static void open_handler(	GApplication *gapp,
 
 		if(state.ready)
 		{
-			load_files(app, (const gchar **)app->files);
+			load_files(app, (const gchar **)app->files, append);
 		}
 	}
 
@@ -604,11 +680,6 @@ static void mpv_prop_change_handler(mpv_event_property *prop, gpointer data)
 
 		gmpv_control_box_set_volume(control_box, volume);
 	}
-	else if(g_strcmp0(prop->name, "aid") == 0)
-	{
-		/* prop->data == NULL iff there is no audio track */
-		gmpv_control_box_set_volume_enabled(control_box, !!prop->data);
-	}
 	else if(g_strcmp0(prop->name, "length") == 0 && prop->data)
 	{
 		gdouble length = *((gdouble *) prop->data);
@@ -665,8 +736,6 @@ static void mpv_event_handler(mpv_event *event, gpointer data)
 		GmpvControlBox *control_box;
 		GmpvPlaylist *playlist;
 		gchar *title;
-		gchar *aid_str;
-		gint64 aid;
 		gint64 pos = -1;
 		gdouble length = 0;
 
@@ -689,19 +758,14 @@ static void mpv_event_handler(mpv_event *event, gpointer data)
 		gmpv_mpv_obj_get_property
 			(mpv, "length", MPV_FORMAT_DOUBLE, &length);
 
-		aid_str = gmpv_mpv_obj_get_property_string(mpv, "aid");
-		aid = g_ascii_strtoll(aid_str, NULL, 10);
-
 		title = gmpv_mpv_obj_get_property_string(mpv, "media-title");
 
 		gmpv_control_box_set_enabled(control_box, TRUE);
-		gmpv_control_box_set_volume_enabled(control_box, (aid > 0));
 		gmpv_control_box_set_playing_state(control_box, !state.paused);
 		gmpv_playlist_set_indicator_pos(playlist, (gint)pos);
 		gmpv_control_box_set_seek_bar_length(control_box, (gint)length);
 		gtk_window_set_title(GTK_WINDOW(app->gui), title);
 
-		mpv_free(aid_str);
 		mpv_free(title);
 	}
 	else if(event->event_id == MPV_EVENT_CLIENT_MESSAGE)
@@ -920,6 +984,74 @@ static gboolean mouse_press_handler(	GtkWidget *widget,
 	return TRUE;
 }
 
+static gboolean scroll_handler(	GtkWidget *widget,
+				GdkEvent *event,
+				gpointer data )
+{
+	GdkEventScroll *scroll_event = (GdkEventScroll *)event;
+	guint button = 0;
+	gint count = 0;
+
+	/* Only one axis will be used at a time to prevent accidental activation
+	 * of commands bound to buttons associated with the other axis.
+	 */
+	if(ABS(scroll_event->delta_x) > ABS(scroll_event->delta_y))
+	{
+		count = (gint)ABS(scroll_event->delta_x);
+
+		if(scroll_event->delta_x <= -1)
+		{
+			button = 6;
+		}
+		else if(scroll_event->delta_x >= 1)
+		{
+			button = 7;
+		}
+	}
+	else
+	{
+		count = (gint)ABS(scroll_event->delta_y);
+
+		if(scroll_event->delta_y <= -1)
+		{
+			button = 4;
+		}
+		else if(scroll_event->delta_y >= 1)
+		{
+			button = 5;
+		}
+	}
+
+	if(button > 0)
+	{
+		GdkEventButton btn_event;
+
+		btn_event.type = scroll_event->type;
+		btn_event.window = scroll_event->window;
+		btn_event.send_event = scroll_event->send_event;
+		btn_event.time = scroll_event->time;
+		btn_event.x = scroll_event->x;
+		btn_event.y = scroll_event->y;
+		btn_event.axes = NULL;
+		btn_event.state = scroll_event->state;
+		btn_event.button = button;
+		btn_event.device = scroll_event->device;
+		btn_event.x_root = scroll_event->x_root;
+		btn_event.y_root = scroll_event->y_root;
+
+		for(gint i = 0; i < count; i++)
+		{
+			/* Not used */
+			gboolean rc;
+
+			g_signal_emit_by_name
+				(widget, "button-press-event", &btn_event, &rc);
+		}
+	}
+
+	return TRUE;
+}
+
 static gboolean queue_render(GtkGLArea *area)
 {
 	gtk_gl_area_queue_render(area);
@@ -987,7 +1119,9 @@ static void set_inhibit_idle(GmpvApplication *app, gboolean inhibit)
 	}
 }
 
-static gboolean load_files(GmpvApplication *app, const gchar **files)
+static gboolean load_files(	GmpvApplication *app,
+				const gchar **files,
+				gboolean append )
 {
 	GmpvMpvObjState state;
 
@@ -995,7 +1129,7 @@ static gboolean load_files(GmpvApplication *app, const gchar **files)
 
 	if(files)
 	{
-		gmpv_mpv_obj_load_list(app->mpv, files, FALSE, TRUE);
+		gmpv_mpv_obj_load_list(app->mpv, files, append, TRUE);
 
 		g_strfreev(app->files);
 
@@ -1047,6 +1181,10 @@ static void connect_signals(GmpvApplication *app)
 				"button-press-event",
 				G_CALLBACK(mouse_press_handler),
 				app );
+	g_signal_connect(	video_area,
+				"scroll-event",
+				G_CALLBACK(scroll_handler),
+				app );
 	g_signal_connect(	playlist,
 				"row-activated",
 				G_CALLBACK(playlist_row_activated_handler),
@@ -1091,16 +1229,41 @@ static void setup_accelerators(GmpvApplication *app)
 	add_accelerator(gtk_app, "F11", "app.fullscreen_toggle");
 }
 
-
 static void gmpv_application_class_init(GmpvApplicationClass *klass)
 {
 }
 
 static void gmpv_application_init(GmpvApplication *app)
 {
-	g_signal_connect(app, "startup", G_CALLBACK(startup_handler), app);
-	g_signal_connect(app, "activate", G_CALLBACK(activate_handler), app);
-	g_signal_connect(app, "open", G_CALLBACK(open_handler), app);
+	app->no_existing_session = FALSE;
+
+	g_application_add_main_option
+		(	G_APPLICATION(app),
+			"enqueue",
+			'\0',
+			G_OPTION_FLAG_NONE,
+			G_OPTION_ARG_NONE,
+			_("Enqueue"),
+			NULL );
+	g_application_add_main_option
+		(	G_APPLICATION(app),
+			"no-existing-session",
+			'\0',
+			G_OPTION_FLAG_NONE,
+			G_OPTION_ARG_NONE,
+			_("Don't connect to an already-running instance"),
+			NULL );
+
+	g_signal_connect
+		(app, "handle-local-options", G_CALLBACK(options_handler), app);
+	g_signal_connect
+		(app, "command-line", G_CALLBACK(command_line_handler), app);
+	g_signal_connect
+		(app, "startup", G_CALLBACK(startup_handler), app);
+	g_signal_connect
+		(app, "activate", G_CALLBACK(activate_handler), app);
+	g_signal_connect
+		(app, "open", G_CALLBACK(open_handler), app);
 }
 
 GmpvMainWindow *gmpv_application_get_main_window(GmpvApplication *app)
