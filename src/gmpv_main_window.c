@@ -320,12 +320,13 @@ void gmpv_main_window_set_fullscreen(GmpvMainWindow *wnd, gboolean fullscreen)
 			gtk_widget_set_valign(wnd->control_box, GTK_ALIGN_FILL);
 			gtk_widget_set_size_request(wnd->control_box, -1, -1);
 
+			gmpv_video_area_set_fullscreen_state(vid_area, FALSE);
+
 			g_object_ref(wnd->control_box);
 			gmpv_video_area_set_control_box(vid_area, NULL);
 			gtk_container_add(main_box, wnd->control_box);
 			g_object_unref(wnd->control_box);
 
-			gmpv_video_area_set_fullscreen_state(vid_area, FALSE);
 			gtk_window_unfullscreen(GTK_WINDOW(wnd));
 
 			if(!gmpv_main_window_get_csd_enabled(wnd))
