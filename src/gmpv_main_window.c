@@ -418,8 +418,10 @@ void gmpv_main_window_load_state(GmpvMainWindow *wnd)
 	{
 		GApplication *gapp = g_application_get_default();
 		GSettings *settings = g_settings_new(CONFIG_WIN_STATE);
-		GAction *action =	g_action_map_lookup_action
+		GAction *playlist_action =	g_action_map_lookup_action
 					(G_ACTION_MAP(gapp), "toggle-playlist");
+		GAction *controls_action =	g_action_map_lookup_action
+					(G_ACTION_MAP(gapp), "toggle-controls");
 		gint width = g_settings_get_int(settings, "width");
 		gint height = g_settings_get_int(settings, "height");
 		gint handle_pos;
@@ -444,7 +446,9 @@ void gmpv_main_window_load_state(GmpvMainWindow *wnd)
 			(GTK_PANED(wnd->vid_area_paned), handle_pos);
 
 		g_action_change_state
-			(action, g_variant_new_boolean(wnd->playlist_visible));
+			(controls_action, g_variant_new_boolean(controls_visible));
+		g_action_change_state
+			(playlist_action, g_variant_new_boolean(wnd->playlist_visible));
 
 		g_clear_object(&settings);
 	}
