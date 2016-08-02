@@ -280,7 +280,6 @@ void gmpv_main_window_set_fullscreen(GmpvMainWindow *wnd, gboolean fullscreen)
 {
 	if(fullscreen != wnd->fullscreen)
 	{
-		GmpvControlBox *control_box = GMPV_CONTROL_BOX(wnd->control_box);
 		GmpvVideoArea *vid_area = GMPV_VIDEO_AREA(wnd->vid_area);
 		GtkContainer* main_box = GTK_CONTAINER(wnd->main_box);
 

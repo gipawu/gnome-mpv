@@ -287,7 +287,7 @@ void resize_window_to_fit(GmpvApplication *app, gdouble multiplier)
 		if (gmpv_main_window_get_playlist_visible(wnd))
 		{
 			new_width -= gtk_widget_get_allocated_width(
-		  		gmpv_main_window_get_playlist(wnd));
+		  		GTK_WIDGET(gmpv_main_window_get_playlist(wnd)));
 		}
 
 		g_debug("Resizing window to %dx%d", new_width, new_height);
