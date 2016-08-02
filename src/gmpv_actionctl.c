@@ -33,28 +33,37 @@
 #include "gmpv_shortcuts_window.h"
 #endif
 
-static void open_handler(	GSimpleAction *action,
-				GVariant *param,
-				gpointer data );
-static void open_loc_handler(	GSimpleAction *action,
-				GVariant *param,
-				gpointer data );
-static void loop_handler(	GSimpleAction *action,
-				GVariant *value,
-				gpointer data );
-static void playlist_toggle_handler(	GSimpleAction *action,
+static void show_open_dialog_handler(	GSimpleAction *action,
 					GVariant *param,
 					gpointer data );
-static void playlist_save_handler(	GSimpleAction *action,
+static void show_open_location_dialog_handler(	GSimpleAction *action,
+						GVariant *param,
+						gpointer data );
+static void toggle_loop_handler(	GSimpleAction *action,
+					GVariant *value,
+					gpointer data );
+static void show_shortcuts_dialog_handler(	GSimpleAction *action,
+						GVariant *param,
+						gpointer data );
+static void toggle_controls_handler(	GSimpleAction *action,
 					GVariant *param,
 					gpointer data );
-static void pref_handler(	GSimpleAction *action,
-				GVariant *param,
-				gpointer data );
+static void toggle_playlist_handler(	GSimpleAction *action,
+					GVariant *param,
+					gpointer data );
+static void save_playlist_handler(	GSimpleAction *action,
+					GVariant *param,
+					gpointer data );
+static void remove_selected_playlist_item_handler(	GSimpleAction *action,
+							GVariant *param,
+							gpointer data );
+static void show_preferences_dialog_handler(	GSimpleAction *action,
+						GVariant *param,
+						gpointer data );
 static void quit_handler(	GSimpleAction *action,
 				GVariant *param,
 				gpointer data );
-static void track_select_handler(	GSimpleAction *action,
+static void set_track_handler(	GSimpleAction *action,
 					GVariant *value,
 					gpointer data );
 static void load_track_handler(	GSimpleAction *action,
@@ -63,40 +72,57 @@ static void load_track_handler(	GSimpleAction *action,
 static void fullscreen_handler(	GSimpleAction *action,
 				GVariant *param,
 				gpointer data );
-static void video_size_handler(	GSimpleAction *action,
-				GVariant *param,
-				gpointer data );
-static void about_handler(	GSimpleAction *action,
-				GVariant *param,
-				gpointer data );
+static void set_video_size_handler(	GSimpleAction *action,
+					GVariant *param,
+					gpointer data );
+static void show_about_dialog_handler(	GSimpleAction *action,
+					GVariant *param,
+					gpointer data );
 
-static void open_handler(	GSimpleAction *action,
-				GVariant *param,
-				gpointer data )
+static void show_open_dialog_handler(	GSimpleAction *action,
+					GVariant *param,
+					gpointer data )
 {
+	const gchar *pl_exts[] = PLAYLIST_EXTS;
 	GmpvApplication *app = data;
 	GmpvMainWindow *wnd = NULL;
 	GSettings *main_config = NULL;
 	GSettings *win_config = NULL;
 	GtkFileChooser *file_chooser = NULL;
-	GtkWidget *open_dialog = NULL;
+	GtkFileFilter *filter = NULL;
+	GmpvFileChooser *open_dialog = NULL;
 	gboolean last_folder_enable = FALSE;
 	gboolean append = FALSE;
 
 	g_variant_get(param, "b", &append);
 
 	wnd = gmpv_application_get_main_window(app);
-	open_dialog =	gtk_file_chooser_dialog_new
-			(	append?_("Add File to Playlist"):_("Open File"),
-				GTK_WINDOW(wnd),
-				GTK_FILE_CHOOSER_ACTION_OPEN,
-				_("_Cancel"), GTK_RESPONSE_CANCEL,
-				_("_Open"), GTK_RESPONSE_ACCEPT,
-				NULL );
+	open_dialog = gmpv_file_chooser_new(	append?
+						_("Add File to Playlist"):
+						_("Open File"),
+						GTK_WINDOW(wnd),
+						GTK_FILE_CHOOSER_ACTION_OPEN,
+						_("_Open"),
+						_("_Cancel"));
 	main_config = g_settings_new(CONFIG_ROOT);
 	file_chooser = GTK_FILE_CHOOSER(open_dialog);
 	last_folder_enable =	g_settings_get_boolean
 				(main_config, "last-folder-enable");
+	filter = gtk_file_filter_new();
+
+	gtk_file_filter_add_mime_type(filter, "video/*");
+	gtk_file_filter_add_mime_type(filter, "audio/*");
+	gtk_file_filter_add_mime_type(filter, "image/*");
+
+	for(gint i = 0; pl_exts[i]; i++)
+	{
+		gchar *pattern = g_strdup_printf("*.%s", pl_exts[i]);
+
+		gtk_file_filter_add_pattern(filter, pattern);
+		g_free(pattern);
+	}
+
+	gtk_file_chooser_set_filter(file_chooser, filter);
 
 	if(last_folder_enable)
 	{
@@ -117,7 +143,7 @@ static void open_handler(	GSimpleAction *action,
 
 	gtk_file_chooser_set_select_multiple(file_chooser, TRUE);
 
-	if(gtk_dialog_run(GTK_DIALOG(open_dialog)) == GTK_RESPONSE_ACCEPT)
+	if(gmpv_file_chooser_run(open_dialog) == GTK_RESPONSE_ACCEPT)
 	{
 		GSList *uri_slist = gtk_file_chooser_get_filenames(file_chooser);
 		GSList *uri = uri_slist;
@@ -158,14 +184,15 @@ static void open_handler(	GSimpleAction *action,
 		g_slist_free_full(uri_slist, g_free);
 	}
 
-	gtk_widget_destroy(open_dialog);
+
+	gmpv_file_chooser_destroy(open_dialog);
 	g_clear_object(&main_config);
 	g_clear_object(&win_config);
 }
 
-static void open_loc_handler(	GSimpleAction *action,
-				GVariant *param,
-				gpointer data )
+static void show_open_location_dialog_handler(	GSimpleAction *action,
+						GVariant *param,
+						gpointer data )
 {
 	GmpvApplication *app = data;
 	GmpvMainWindow *wnd = gmpv_application_get_main_window(app);
@@ -186,24 +213,21 @@ static void open_loc_handler(	GSimpleAction *action,
 	gtk_widget_destroy(dlg);
 }
 
-static void loop_handler(	GSimpleAction *action,
-				GVariant *value,
-				gpointer data )
+static void toggle_loop_handler(	GSimpleAction *action,
+					GVariant *value,
+					gpointer data )
 {
 	GmpvApplication *app = data;
 	GmpvMpvObj *mpv = gmpv_application_get_mpv_obj(app);
 	gboolean loop = g_variant_get_boolean(value);
 
 	g_simple_action_set_state(action, value);
-
-	mpv_check_error(gmpv_mpv_obj_set_property_string(	mpv,
-							"loop",
-							loop?"inf":"no" ));
+	gmpv_mpv_obj_set_property_string(mpv, "loop", loop?"inf":"no");
 }
 
-static void show_shortcuts_handler(	GSimpleAction *action,
-					GVariant *param,
-					gpointer data )
+static void show_shortcuts_dialog_handler(	GSimpleAction *action,
+						GVariant *param,
+						gpointer data )
 {
 #if GTK_CHECK_VERSION(3, 20, 0)
 	GmpvApplication *app = data;
@@ -214,7 +238,19 @@ static void show_shortcuts_handler(	GSimpleAction *action,
 #endif
 }
 
-static void playlist_toggle_handler(	GSimpleAction *action,
+static void toggle_controls_handler(	GSimpleAction *action,
+					GVariant *param,
+					gpointer data )
+{
+	GmpvApplication *app = data;
+	GmpvMainWindow *wnd = gmpv_application_get_main_window(app);
+	GmpvControlBox *ctrl = gmpv_main_window_get_control_box(wnd);
+	gboolean visible = gtk_widget_get_visible(GTK_WIDGET(ctrl));
+
+	gtk_widget_set_visible(GTK_WIDGET(ctrl), !visible);
+}
+
+static void toggle_playlist_handler(	GSimpleAction *action,
 					GVariant *param,
 					gpointer data )
 {
@@ -226,7 +262,7 @@ static void playlist_toggle_handler(	GSimpleAction *action,
 	gmpv_main_window_set_playlist_visible(wnd, visible);
 }
 
-static void playlist_save_handler(	GSimpleAction *action,
+static void save_playlist_handler(	GSimpleAction *action,
 					GVariant *param,
 					gpointer data )
 {
@@ -238,7 +274,7 @@ static void playlist_save_handler(	GSimpleAction *action,
 	GFile *dest_file;
 	GOutputStream *dest_stream;
 	GtkFileChooser *file_chooser;
-	GtkWidget *save_dialog;
+	GmpvFileChooser *save_dialog;
 	GError *error;
 	GtkTreeIter iter;
 	gboolean rc;
@@ -249,13 +285,12 @@ static void playlist_save_handler(	GSimpleAction *action,
 	model = GTK_TREE_MODEL(gmpv_playlist_get_store(playlist));
 	dest_file = NULL;
 	dest_stream = NULL;
-	save_dialog =	gtk_file_chooser_dialog_new
+	save_dialog =	gmpv_file_chooser_new
 			(	_("Save Playlist"),
 				GTK_WINDOW(wnd),
 				GTK_FILE_CHOOSER_ACTION_SAVE,
-				_("_Cancel"), GTK_RESPONSE_CANCEL,
-				_("_Save"), GTK_RESPONSE_ACCEPT,
-				NULL );
+				_("_Save"),
+				_("_Cancel") );
 	file_chooser = GTK_FILE_CHOOSER(save_dialog);
 	error = NULL;
 	rc = FALSE;
@@ -263,13 +298,13 @@ static void playlist_save_handler(	GSimpleAction *action,
 	gtk_file_chooser_set_do_overwrite_confirmation(file_chooser, TRUE);
 	gtk_file_chooser_set_current_name(file_chooser, "playlist.m3u");
 
-	if(gtk_dialog_run(GTK_DIALOG(save_dialog)) == GTK_RESPONSE_ACCEPT)
+	if(gmpv_file_chooser_run(save_dialog) == GTK_RESPONSE_ACCEPT)
 	{
 		/* There should be only one file selected. */
 		dest_file = gtk_file_chooser_get_file(file_chooser);
 	}
 
-	gtk_widget_destroy(save_dialog);
+	gmpv_file_chooser_destroy(save_dialog);
 
 	if(dest_file)
 	{
@@ -322,9 +357,9 @@ static void playlist_save_handler(	GSimpleAction *action,
 	}
 }
 
-static void playlist_remove_selected(	GSimpleAction *action,
-					GVariant *param,
-					gpointer data )
+static void remove_selected_playlist_item_handler(	GSimpleAction *action,
+							GVariant *param,
+							gpointer data )
 {
 	GmpvMainWindow *wnd =	gmpv_application_get_main_window
 				(GMPV_APPLICATION(data));
@@ -339,9 +374,9 @@ static void playlist_remove_selected(	GSimpleAction *action,
 	}
 }
 
-static void pref_handler(	GSimpleAction *action,
-				GVariant *param,
-				gpointer data )
+static void show_preferences_dialog_handler(	GSimpleAction *action,
+						GVariant *param,
+						gpointer data )
 {
 	GmpvApplication *app = data;
 	GmpvMainWindow *wnd = gmpv_application_get_main_window(app);
@@ -401,9 +436,9 @@ static void quit_handler(	GSimpleAction *action,
 	quit(data);
 }
 
-static void track_select_handler(	GSimpleAction *action,
-					GVariant *value,
-					gpointer data )
+static void set_track_handler(	GSimpleAction *action,
+				GVariant *value,
+				gpointer data )
 {
 	GmpvApplication *app = data;
 	GmpvMpvObj *mpv;
@@ -415,15 +450,15 @@ static void track_select_handler(	GSimpleAction *action,
 	g_variant_get(value, "x", &id);
 	g_simple_action_set_state(action, value);
 
-	if(g_strcmp0(name, "audio_select") == 0)
+	if(g_strcmp0(name, "set-audio-track") == 0)
 	{
 		mpv_prop = "aid";
 	}
-	else if(g_strcmp0(name, "video_select") == 0)
+	else if(g_strcmp0(name, "set-video-track") == 0)
 	{
 		mpv_prop = "vid";
 	}
-	else if(g_strcmp0(name, "sub_select") == 0)
+	else if(g_strcmp0(name, "set-subtitle-track") == 0)
 	{
 		mpv_prop = "sid";
 	}
@@ -451,6 +486,7 @@ static void load_track_handler(	GSimpleAction *action,
 	GmpvApplication *app = data;
 	GmpvMainWindow *wnd;
 	GtkFileChooser *file_chooser;
+	GtkFileFilter *filter;
 	GtkWidget *open_dialog;
 	const gchar *cmd_name;
 
@@ -465,6 +501,26 @@ static void load_track_handler(	GSimpleAction *action,
 				_("_Open"), GTK_RESPONSE_ACCEPT,
 				NULL );
 	file_chooser = GTK_FILE_CHOOSER(open_dialog);
+	filter = gtk_file_filter_new();
+
+	gtk_file_chooser_set_filter(file_chooser, filter);
+
+	if (g_strcmp0(cmd_name, "audio-add") == 0)
+	{
+		gtk_file_filter_add_mime_type(filter, "audio/*");
+	}
+	else if (g_strcmp0(cmd_name, "sub-add") == 0)
+	{
+		static const char *const sub_exts[] = SUBTITLE_EXTS;
+
+		for(gint i = 0; sub_exts[i]; i++)
+		{
+			gchar *pattern = g_strdup_printf("*.%s", sub_exts[i]);
+
+			gtk_file_filter_add_pattern(filter, pattern);
+			g_free(pattern);
+		}
+	}
 
 	gtk_file_chooser_set_select_multiple(file_chooser, TRUE);
 
@@ -500,15 +556,15 @@ static void fullscreen_handler(	GSimpleAction *action,
 
 	g_object_get(action, "name", &name, NULL);
 
-	if(g_strcmp0(name, "fullscreen_toggle") == 0)
+	if(g_strcmp0(name, "toggle-fullscreen") == 0)
 	{
 		gmpv_main_window_toggle_fullscreen(wnd);
 	}
-	else if(g_strcmp0(name, "fullscreen_enter") == 0)
+	else if(g_strcmp0(name, "enter-fullscreen") == 0)
 	{
 		gmpv_main_window_set_fullscreen(wnd, TRUE);
 	}
-	else if(g_strcmp0(name, "fullscreen_leave") == 0)
+	else if(g_strcmp0(name, "leave-fullscreen") == 0)
 	{
 		gmpv_main_window_set_fullscreen(wnd, FALSE);
 	}
@@ -516,18 +572,18 @@ static void fullscreen_handler(	GSimpleAction *action,
 	g_free(name);
 }
 
-static void video_size_handler(	GSimpleAction *action,
-				GVariant *param,
-				gpointer data )
+static void set_video_size_handler(	GSimpleAction *action,
+					GVariant *param,
+					gpointer data )
 {
 	gdouble value = g_variant_get_double (param);
 
 	resize_window_to_fit((GmpvApplication *)data, value);
 }
 
-static void about_handler(	GSimpleAction *action,
-				GVariant *param,
-				gpointer data )
+static void show_about_dialog_handler(	GSimpleAction *action,
+					GVariant *param,
+					gpointer data )
 {
 	GmpvApplication *app = data;
 	GmpvMainWindow *wnd = gmpv_application_get_main_window(app);
@@ -556,53 +612,55 @@ static void about_handler(	GSimpleAction *action,
 void gmpv_actionctl_map_actions(GmpvApplication *app)
 {
 	const GActionEntry entries[]
-	= {	{.name = "open",
-		.activate = open_handler,
-		.parameter_type = "b"},
-		{.name = "quit",
-		.activate = quit_handler},
-		{.name = "about",
-		.activate = about_handler},
-		{.name = "pref",
-		.activate = pref_handler},
-		{.name = "openloc",
-		.activate = open_loc_handler},
-		{.name = "loop",
-		.state = "false",
-		.change_state = loop_handler},
-		{.name = "show_shortcuts",
-		.activate = show_shortcuts_handler},
-		{.name = "playlist_toggle",
-		.state = "false",
-		.change_state = playlist_toggle_handler},
-		{.name = "playlist_save",
-		.activate = playlist_save_handler},
-		{.name = "playlist_remove_selected",
-		.activate = playlist_remove_selected},
-		{.name = "audio_select",
-		.change_state = track_select_handler,
-		.state = "@x 1",
-		.parameter_type = "x"},
-		{.name = "video_select",
-		.change_state = track_select_handler,
-		.state = "@x 1",
-		.parameter_type = "x"},
-		{.name = "sub_select",
-		.change_state = track_select_handler,
-		.state = "@x 1",
-		.parameter_type = "x"},
-		{.name = "load_track",
-		.activate = load_track_handler,
-		.parameter_type = "s"},
-		{.name = "fullscreen_toggle",
-		.activate = fullscreen_handler},
-		{.name = "fullscreen_enter",
-		.activate = fullscreen_handler},
-		{.name = "fullscreen_leave",
-		.activate = fullscreen_handler},
-		{.name = "video_size",
-		.activate = video_size_handler,
-		.parameter_type = "d"} };
+		= {	{.name = "show-open-dialog",
+			.activate = show_open_dialog_handler,
+			.parameter_type = "b"},
+			{.name = "quit",
+			.activate = quit_handler},
+			{.name = "show-about-dialog",
+			.activate = show_about_dialog_handler},
+			{.name = "show-preferences-dialog",
+			.activate = show_preferences_dialog_handler},
+			{.name = "show-open-location-dialog",
+			.activate = show_open_location_dialog_handler},
+			{.name = "toggle-loop",
+			.state = "false",
+			.change_state = toggle_loop_handler},
+			{.name = "show-shortcuts-dialog",
+			.activate = show_shortcuts_dialog_handler},
+			{.name = "toggle-controls",
+			.activate = toggle_controls_handler},
+			{.name = "toggle-playlist",
+			.state = "false",
+			.change_state = toggle_playlist_handler},
+			{.name = "save-playlist",
+			.activate = save_playlist_handler},
+			{.name = "remove-selected-playlist-item",
+			.activate = remove_selected_playlist_item_handler},
+			{.name = "set-audio-track",
+			.change_state = set_track_handler,
+			.state = "@x 0",
+			.parameter_type = "x"},
+			{.name = "set-video-track",
+			.change_state = set_track_handler,
+			.state = "@x 0",
+			.parameter_type = "x"},
+			{.name = "set-subtitle-track",
+			.change_state = set_track_handler,
+			.state = "@x 0",
+			.parameter_type = "x"},
+			{.name = "load-track",
+			.activate = load_track_handler,
+			.parameter_type = "s"},
+			{.name = "toggle-fullscreen",
+			.activate = fullscreen_handler},
+			{.name = "enter-fullscreen",
+			.activate = fullscreen_handler},
+			{.name = "leave-fullscreen",
+			.activate = fullscreen_handler},
+			{.name = "set-video-size",
+			.activate = set_video_size_handler,
+			.parameter_type = "d"} };
 
 	g_action_map_add_action_entries(	G_ACTION_MAP(app),
 						entries,

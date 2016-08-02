@@ -131,6 +131,7 @@ void activate_action_string(GmpvApplication *app, const gchar *str)
 
 	if(action && param_match)
 	{
+		g_debug("Activating action %s", str);
 		g_action_activate(action, param);
 	}
 	else
@@ -294,5 +295,5 @@ void resize_window_to_fit(GmpvApplication *app, gdouble multiplier)
 		gmpv_main_window_resize_video_area(wnd, new_width, new_height);
 	}
 
-	mpv_free(video);
+	gmpv_mpv_obj_free(video);
 }

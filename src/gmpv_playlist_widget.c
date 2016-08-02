@@ -502,8 +502,10 @@ static gboolean mouse_press_handler(	GtkWidget *widget,
 		GtkWidget *ctx_menu;
 
 		menu = g_menu_new();
-		add_menu_item = g_menu_item_new(_("_Add…"), "app.open(true)");
-		loop_menu_item = g_menu_item_new(_("Loop"), "app.loop");
+		add_menu_item =	g_menu_item_new
+				(_("_Add…"), "app.show-open-dialog(true)");
+		loop_menu_item =	g_menu_item_new
+					(_("Loop"), "app.toggle-loop");
 
 		g_menu_append_item(menu, add_menu_item);
 		g_menu_append_item(menu, loop_menu_item);
@@ -649,6 +651,12 @@ void gmpv_playlist_widget_remove_selected(GmpvPlaylistWidget *wgt)
 
 		g_free(index_str);
 	}
+}
+
+void gmpv_playlist_widget_queue_draw(GmpvPlaylistWidget *wgt)
+{
+	gtk_widget_queue_draw(GTK_WIDGET(wgt));
+	gtk_widget_queue_draw(wgt->tree_view);
 }
 
 GmpvPlaylist *gmpv_playlist_widget_get_store(GmpvPlaylistWidget *wgt)

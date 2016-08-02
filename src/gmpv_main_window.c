@@ -77,7 +77,7 @@ static void gmpv_main_window_get_property(	GObject *object,
 						guint property_id,
 						GValue *value,
 						GParamSpec *pspec );
-static void size_allocate_handler(	GtkWidget *widget,
+static void resize_video_area_finalize(	GtkWidget *widget,
 					GdkRectangle *allocation,
 					gpointer data );
 static gboolean resize_to_target(gpointer data);
@@ -93,6 +93,10 @@ static void gmpv_main_window_constructed(GObject *object)
 	gtk_widget_show_all(self->playlist);
 	gtk_widget_hide(self->playlist);
 	gtk_widget_set_no_show_all(self->playlist, TRUE);
+
+	gtk_widget_show_all(self->control_box);
+	gtk_widget_hide(self->control_box);
+	gtk_widget_set_no_show_all(self->control_box, TRUE);
 
 	gtk_paned_pack1(	GTK_PANED(self->vid_area_paned),
 				self->vid_area,
@@ -141,7 +145,7 @@ static void gmpv_main_window_get_property(	GObject *object,
 	}
 }
 
-static void size_allocate_handler(	GtkWidget *widget,
+static void resize_video_area_finalize(	GtkWidget *widget,
 					GdkRectangle *allocation,
 					gpointer data )
 {
@@ -155,7 +159,7 @@ static void size_allocate_handler(	GtkWidget *widget,
 	gint target_height = wnd->resize_target[1];
 
 	g_signal_handlers_disconnect_by_func
-		(widget, size_allocate_handler, data);
+		(widget, resize_video_area_finalize, data);
 
 	/* Adjust resize offset */
 	if((width != target_width || height != target_height)
@@ -179,6 +183,12 @@ static gboolean resize_to_target(gpointer data)
 	gtk_window_resize(	GTK_WINDOW(wnd),
 				target_width+wnd->width_offset,
 				target_height+wnd->height_offset );
+
+	/* Prevent graphical glitches that appear when calling
+	 * gmpv_main_window_resize_video_area() with the current size as the
+	 * target size.
+	 */
+	gmpv_playlist_widget_queue_draw(GMPV_PLAYLIST_WIDGET(wnd->playlist));
 
 	return FALSE;
 }
@@ -371,16 +381,19 @@ void gmpv_main_window_save_state(GmpvMainWindow *wnd)
 	gint height;
 	gint handle_pos;
 	gdouble volume;
+	gboolean controls_visible;
 
 	settings = g_settings_new(CONFIG_WIN_STATE);
 	handle_pos = gtk_paned_get_position(GTK_PANED(wnd->vid_area_paned));
 	volume = gmpv_control_box_get_volume(GMPV_CONTROL_BOX(wnd->control_box));
+	controls_visible = gtk_widget_get_visible(wnd->control_box);
 
 	gtk_window_get_size(GTK_WINDOW(wnd), &width, &height);
 
 	g_settings_set_int(settings, "width", width);
 	g_settings_set_int(settings, "height", height);
 	g_settings_set_double(settings, "volume", volume);
+	g_settings_set_boolean(settings, "show-controls", controls_visible);
 	g_settings_set_boolean(settings, "show-playlist", wnd->playlist_visible);
 
 	if(gmpv_main_window_get_playlist_visible(wnd))
@@ -406,21 +419,25 @@ void gmpv_main_window_load_state(GmpvMainWindow *wnd)
 		GApplication *gapp = g_application_get_default();
 		GSettings *settings = g_settings_new(CONFIG_WIN_STATE);
 		GAction *action =	g_action_map_lookup_action
-					(G_ACTION_MAP(gapp), "playlist_toggle");
+					(G_ACTION_MAP(gapp), "toggle-playlist");
 		gint width = g_settings_get_int(settings, "width");
 		gint height = g_settings_get_int(settings, "height");
 		gint handle_pos;
+		gboolean controls_visible;
 		gdouble volume;
 
 		wnd->playlist_width
 			= g_settings_get_int(settings, "playlist-width");
 		wnd->playlist_visible
 			= g_settings_get_boolean(settings, "show-playlist");
+		controls_visible
+			= g_settings_get_boolean(settings, "show-controls");
 		volume = g_settings_get_double(settings, "volume");
 		handle_pos = width - wnd->playlist_width;
 
 		gmpv_control_box_set_volume
 			(GMPV_CONTROL_BOX(wnd->control_box), volume);
+		gtk_widget_set_visible(wnd->control_box, controls_visible);
 		gtk_widget_set_visible(wnd->playlist, wnd->playlist_visible);
 		gtk_window_resize(GTK_WINDOW(wnd), width, height);
 		gtk_paned_set_position
@@ -477,7 +494,7 @@ void gmpv_main_window_resize_video_area(	GmpvMainWindow *wnd,
 {
 	g_signal_connect(	wnd->vid_area,
 				"size-allocate",
-				G_CALLBACK(size_allocate_handler),
+				G_CALLBACK(resize_video_area_finalize),
 				wnd );
 
 	wnd->resize_target[0] = width;
@@ -485,8 +502,8 @@ void gmpv_main_window_resize_video_area(	GmpvMainWindow *wnd,
 	resize_to_target(wnd);
 
 	/* The size may not change, so this is needed to ensure that
-	 * size_allocate_handler() will be called so that the event handler will
-	 * be disconnected.
+	 * resize_video_area_finalize() will be called so that the event handler
+	 * will be disconnected.
 	 */
 #if GTK_CHECK_VERSION(3, 20, 0)
 	gtk_widget_queue_allocate(wnd->vid_area);
@@ -571,12 +588,13 @@ void gmpv_main_window_set_playlist_visible(	GmpvMainWindow *wnd,
 		{
 			gint new_pos = width - wnd->playlist_width;
 
-#if !GTK_CHECK_VERSION(3, 20, 0)
-			/* Workaround for window sizing bug affecting
-			 * GTK+ < 3.20
-			 */
-			new_pos -= 52;
-#endif
+			if(gtk_check_version(3, 20, 0))
+			{
+				/* Workaround for window sizing bug affecting
+				 * GTK+ < 3.20
+				 */
+				new_pos -= 52;
+			}
 
 			gtk_paned_set_position(	GTK_PANED(wnd->vid_area_paned),
 						new_pos );

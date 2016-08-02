@@ -49,6 +49,7 @@
 #include "gmpv_control_box.h"
 #include "gmpv_playlist_widget.h"
 
+static void *get_proc_address(void *fn_ctx, const gchar *name);
 static void gmpv_mpv_obj_set_inst_property(	GObject *object,
 						guint property_id,
 						const GValue *value,
@@ -66,6 +67,26 @@ static void mpv_obj_log_handler(GmpvMpvObj *mpv, mpv_event_log_message* message)
 static void load_input_conf(GmpvMpvObj *mpv, const gchar *input_conf);
 
 G_DEFINE_TYPE(GmpvMpvObj, gmpv_mpv_obj, G_TYPE_OBJECT)
+
+static void *get_proc_address(void *fn_ctx, const gchar *name)
+{
+	GdkDisplay *display = gdk_display_get_default();
+
+#ifdef GDK_WINDOWING_WAYLAND
+	if (GDK_IS_WAYLAND_DISPLAY(display))
+		return eglGetProcAddress(name);
+#endif
+#ifdef GDK_WINDOWING_X11
+	if (GDK_IS_X11_DISPLAY(display))
+		return	(void *)(intptr_t)
+			glXGetProcAddressARB((const GLubyte *)name);
+#endif
+#ifdef GDK_WINDOWING_WIN32
+	if (GDK_IS_WIN32_DISPLAY(display))
+		return wglGetProcAddress(name);
+#endif
+	g_assert_not_reached();
+}
 
 static void gmpv_mpv_obj_set_inst_property(	GObject *object,
 						guint property_id,
@@ -915,6 +936,7 @@ void gmpv_mpv_obj_initialize(GmpvMpvObj *mpv)
 	gchar *config_dir = get_config_dir_path();
 	gchar *mpvopt = NULL;
 	gchar *current_vo = NULL;
+	gchar *mpv_version = NULL;
 
 	const struct
 	{
@@ -1011,6 +1033,7 @@ void gmpv_mpv_obj_initialize(GmpvMpvObj *mpv)
 	mpv_observe_property(mpv->mpv_ctx, 0, "aid", MPV_FORMAT_INT64);
 	mpv_observe_property(mpv->mpv_ctx, 0, "chapters", MPV_FORMAT_INT64);
 	mpv_observe_property(mpv->mpv_ctx, 0, "core-idle", MPV_FORMAT_FLAG);
+	mpv_observe_property(mpv->mpv_ctx, 0, "fullscreen", MPV_FORMAT_FLAG);
 	mpv_observe_property(mpv->mpv_ctx, 0, "pause", MPV_FORMAT_FLAG);
 	mpv_observe_property(mpv->mpv_ctx, 0, "length", MPV_FORMAT_DOUBLE);
 	mpv_observe_property(mpv->mpv_ctx, 0, "media-title", MPV_FORMAT_STRING);
@@ -1020,7 +1043,11 @@ void gmpv_mpv_obj_initialize(GmpvMpvObj *mpv)
 	mpv_set_wakeup_callback(mpv->mpv_ctx, wakeup_callback, mpv);
 	mpv_check_error(mpv_initialize(mpv->mpv_ctx));
 
+
+	mpv_version = gmpv_mpv_obj_get_property_string(mpv, "mpv-version");
 	current_vo = gmpv_mpv_obj_get_property_string(mpv, "current-vo");
+
+	g_info("Using %s", mpv_version);
 
 	if(current_vo && !GDK_IS_X11_DISPLAY(gdk_display_get_default()))
 	{
@@ -1069,6 +1096,28 @@ void gmpv_mpv_obj_initialize(GmpvMpvObj *mpv)
 	g_free(config_dir);
 	g_free(mpvopt);
 	mpv_free(current_vo);
+	mpv_free(mpv_version);
+}
+
+void gmpv_mpv_obj_init_gl(GmpvMpvObj *mpv)
+{
+	mpv_opengl_cb_context *opengl_ctx;
+	gint rc;
+
+	opengl_ctx = gmpv_mpv_obj_get_opengl_cb_context(mpv);
+	rc = mpv_opengl_cb_init_gl(	opengl_ctx,
+					NULL,
+					get_proc_address,
+					NULL );
+
+	if(rc >= 0)
+	{
+		g_debug("Initialized opengl-cb");
+	}
+	else
+	{
+		g_critical("Failed to initialize opengl-cb");
+	}
 }
 
 void gmpv_mpv_obj_reset(GmpvMpvObj *mpv)
@@ -1271,15 +1320,17 @@ void gmpv_mpv_obj_load(	GmpvMpvObj *mpv,
 	}
 }
 
+void gmpv_mpv_obj_free(gpointer data)
+{
+	mpv_free(data);
+}
+
 void gmpv_mpv_obj_load_list(	GmpvMpvObj *mpv,
 				const gchar **uri_list,
 				gboolean append,
 				gboolean update )
 {
-	static const char *const sub_exts[]
-		= {	"utf", "utf8", "utf-8", "idx", "sub", "srt", "smi",
-			"rt", "txt", "ssa", "aqt", "jss", "js", "ass", "mks",
-			"vtt", "sup", NULL };
+	static const char *const sub_exts[] = SUBTITLE_EXTS;
 
 	for(gint i = 0; uri_list[i]; i++)
 	{

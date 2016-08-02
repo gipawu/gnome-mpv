@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2014-2016 gnome-mpv
+ * Copyright (c) 2016 gnome-mpv
  *
  * This file is part of GNOME MPV.
  *
@@ -17,23 +17,20 @@
  * along with GNOME MPV.  If not, see <http://www.gnu.org/licenses/>.
  */
 
-#ifndef PLAYLIST_WIDGET_H
-#define PLAYLIST_WIDGET_H
+#ifndef SEEK_BAR_H
+#define SEEK_BAR_H
 
 #include <gtk/gtk.h>
 
-#include "gmpv_playlist.h"
-
 G_BEGIN_DECLS
 
-#define GMPV_TYPE_PLAYLIST_WIDGET (gmpv_playlist_widget_get_type ())
+#define GMPV_TYPE_SEEK_BAR (gmpv_seek_bar_get_type())
 
-G_DECLARE_FINAL_TYPE(GmpvPlaylistWidget, gmpv_playlist_widget, GMPV, PLAYLIST_WIDGET, GtkScrolledWindow)
+G_DECLARE_FINAL_TYPE(GmpvSeekBar, gmpv_seek_bar, GMPV, SEEK_BAR, GtkBox)
 
-GtkWidget *gmpv_playlist_widget_new(GmpvPlaylist *store);
-void gmpv_playlist_widget_remove_selected(GmpvPlaylistWidget *wgt);
-void gmpv_playlist_widget_queue_draw(GmpvPlaylistWidget *wgt);
-GmpvPlaylist *gmpv_playlist_widget_get_store(GmpvPlaylistWidget *wgt);
+GtkWidget *gmpv_seek_bar_new(void);
+void gmpv_seek_bar_set_length(GmpvSeekBar *bar, gdouble length);
+void gmpv_seek_bar_set_pos(GmpvSeekBar *bar, gdouble pos);
 
 G_END_DECLS
 

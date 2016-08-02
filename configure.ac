@@ -1,7 +1,7 @@
 AC_PREREQ([2.69])
 
 AC_INIT(	[gnome-mpv],
-		[0.9],
+		[0.10],
 		[http://github.com/gnome-mpv/gnome-mpv/issues],
 		[gnome-mpv],
 		[http://github.com/gnome-mpv/gnome-mpv] )
@@ -35,7 +35,7 @@ GM_CHECK_MACRO([APPSTREAM_XML], [appstream-glib])
 APPSTREAM_XML
 
 AS_IF([test "x$enable_debug" = "xyes"], [
-	AX_APPEND_COMPILE_FLAGS([-O0 -g -fsanitize=address])
+	AX_APPEND_COMPILE_FLAGS([-O0 -g])
 ], [
 	AX_APPEND_COMPILE_FLAGS([-O2])
 ])
