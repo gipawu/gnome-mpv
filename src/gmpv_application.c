@@ -26,6 +26,7 @@
 #include "gmpv_application.h"
 #include "gmpv_control_box.h"
 #include "gmpv_actionctl.h"
+#include "gmpv_inputctl.h"
 #include "gmpv_playbackctl.h"
 #include "gmpv_playlist_widget.h"
 #include "gmpv_track.h"
@@ -92,6 +93,7 @@ static void update_track_list(GmpvApplication *app, mpv_node* track_list);
 static gchar *strnjoinv(	const gchar *separator,
 				const gchar **str_array,
 				gsize count );
+static void set_window_geometry(GmpvApplication *app, const GmpvGeometry *geom);
 static gboolean process_action(gpointer data);
 static void mpv_prop_change_handler(mpv_event_property *prop, gpointer data);
 static void mpv_event_handler(mpv_event *event, gpointer data);
@@ -104,22 +106,6 @@ static void drag_data_handler(	GtkWidget *widget,
 				guint info,
 				guint time,
 				gpointer data);
-static gchar *get_full_keystr(guint keyval, guint state);
-static gboolean key_press_handler(	GtkWidget *widget,
-					GdkEvent *event,
-					gpointer data );
-static gboolean key_release_handler(	GtkWidget *widget,
-					GdkEvent *event,
-					gpointer data );
-static gboolean mouse_button_handler(	GtkWidget *widget,
-					GdkEvent *event,
-					gpointer data );
-static gboolean mouse_move_handler(	GtkWidget *widget,
-					GdkEvent *event,
-					gpointer data );
-static gboolean scroll_handler(	GtkWidget *widget,
-				GdkEvent *event,
-				gpointer data );
 static gboolean queue_render(GtkGLArea *area);
 static void opengl_cb_update_callback(void *cb_ctx);
 static void set_playlist_pos(GmpvApplication *app, gint64 pos);
@@ -128,9 +114,6 @@ static gboolean load_files(	GmpvApplication* app,
 				const gchar **files,
 				gboolean append );
 static void connect_signals(GmpvApplication *app);
-static inline void add_accelerator(	GtkApplication *app,
-					const char *accel,
-					const char *action );
 static void gmpv_application_class_init(GmpvApplicationClass *klass);
 static void gmpv_application_init(GmpvApplication *app);
 
@@ -388,8 +371,6 @@ static void open_handler(	GApplication *gapp,
 
 	if(n_files > 0)
 	{
-		GmpvMpvObjState state;
-
 		app->files = g_malloc(sizeof(GFile *)*(gsize)(n_files+1));
 
 		for(i = 0; i < n_files; i++)
@@ -399,9 +380,7 @@ static void open_handler(	GApplication *gapp,
 
 		app->files[i] = NULL;
 
-		gmpv_mpv_obj_get_state(app->mpv, &state);
-
-		if(state.ready)
+		if(gmpv_mpv_obj_get_state(app->mpv)->ready)
 		{
 			load_files(app, (const gchar **)app->files, append);
 		}
@@ -425,6 +404,7 @@ static gboolean draw_handler(GtkWidget *widget, cairo_t *cr, gpointer data)
 						app );
 
 	gmpv_mpv_obj_initialize(app->mpv);
+	set_window_geometry(app, gmpv_mpv_obj_get_geometry(app->mpv));
 	gmpv_mpv_obj_set_opengl_cb_callback
 		(app->mpv, opengl_cb_update_callback, app);
 	gmpv_mpv_obj_set_event_callback
@@ -446,7 +426,7 @@ static gboolean delete_handler(	GtkWidget *widget,
 				GdkEvent *event,
 				gpointer data )
 {
-	quit(data);
+	gmpv_application_quit(data);
 
 	return TRUE;
 }
@@ -477,7 +457,7 @@ static void playlist_row_deleted_handler(	GmpvPlaylistWidget *playlist,
 {
 	GmpvApplication *app = data;
 
-	if(gmpv_mpv_obj_is_loaded(app->mpv))
+	if(gmpv_mpv_obj_get_state(app->mpv)->loaded)
 	{
 		const gchar *cmd[] = {"playlist_remove", NULL, NULL};
 		gchar *index_str = g_strdup_printf("%d", pos);
@@ -660,17 +640,65 @@ static gboolean process_action(gpointer data)
 	return FALSE;
 }
 
+static void set_window_geometry(GmpvApplication *app, const GmpvGeometry *geom)
+{
+	if(geom)
+	{
+		gint64 width;
+		gint64 height;
+
+		if(!(geom->flags&GMPV_GEOMETRY_IGNORE_DIM))
+		{
+			gmpv_main_window_resize_video_area
+				(app->gui, (gint)geom->width, (gint)geom->height);
+
+			width = geom->width;
+			height = geom->height;
+		}
+		else
+		{
+			GmpvVideoArea *area;
+			GtkWidget *wgt;
+
+			area = gmpv_main_window_get_video_area(app->gui);
+			wgt = GTK_WIDGET(area);
+
+			width = gtk_widget_get_allocated_width(wgt);
+			height = gtk_widget_get_allocated_height(wgt);
+		}
+
+		if(!(geom->flags&GMPV_GEOMETRY_IGNORE_POS))
+		{
+			GmpvControlBox *box =	gmpv_main_window_get_control_box
+						(app->gui);
+			GdkScreen *screen = gdk_screen_get_default();
+			gint screen_w = gdk_screen_get_width(screen);
+			gint screen_h = gdk_screen_get_height(screen);
+			gboolean flip_x = geom->flags&GMPV_GEOMETRY_FLIP_X;
+			gboolean flip_y = geom->flags&GMPV_GEOMETRY_FLIP_Y;
+			gint64 x = flip_x?screen_w-width-geom->x:geom->x;
+			gint64 y = flip_y?screen_h-height-geom->y:geom->y;
+
+			/* Adjust the y-position to account for the height of
+			 * the control box.
+			 */
+			if(flip_y && gtk_widget_get_visible(GTK_WIDGET(box)))
+			{
+				y -=	gtk_widget_get_allocated_height
+					(GTK_WIDGET(box));
+			}
+
+			gtk_window_move(GTK_WINDOW(app->gui), (gint)x, (gint)y);
+		}
+	}
+}
+
 static void mpv_prop_change_handler(mpv_event_property *prop, gpointer data)
 {
 	GmpvApplication *app = data;
-	GmpvMpvObj *mpv;
-	GmpvControlBox *control_box;
-	GmpvMpvObjState state;
-
-	mpv = app->mpv;
-	control_box = gmpv_main_window_get_control_box(app->gui);
-
-	gmpv_mpv_obj_get_state(mpv, &state);
+	GmpvMpvObj *mpv = app->mpv;
+	GmpvControlBox *control_box = gmpv_main_window_get_control_box(app->gui);
+	const GmpvMpvObjState *state = gmpv_mpv_obj_get_state(mpv);
 
 	if(g_strcmp0(prop->name, "pause") == 0)
 	{
@@ -689,7 +717,7 @@ static void mpv_prop_change_handler(mpv_event_property *prop, gpointer data)
 		update_track_list(app, prop->data);
 	}
 	else if(g_strcmp0(prop->name, "volume") == 0
-	&& (state.init_load || state.loaded))
+	&& (state->init_load || state->loaded))
 	{
 		gdouble volume = prop->data?*((double *)prop->data)/100.0:0;
 
@@ -732,22 +760,20 @@ static void mpv_event_handler(mpv_event *event, gpointer data)
 {
 	GmpvApplication *app = data;
 	GmpvMpvObj *mpv = app->mpv;
-	GmpvMpvObjState state;
-
-	gmpv_mpv_obj_get_state(mpv, &state);
+	const GmpvMpvObjState *state = gmpv_mpv_obj_get_state(mpv);
 
 	if(event->event_id == MPV_EVENT_VIDEO_RECONFIG)
 	{
 		gdouble autofit_ratio = gmpv_mpv_obj_get_autofit_ratio(app->mpv);
 
-		if(state.new_file && autofit_ratio > 0)
+		if(state->new_file && autofit_ratio > 0)
 		{
 			resize_window_to_fit(app, autofit_ratio);
 		}
 	}
 	else if(event->event_id == MPV_EVENT_PROPERTY_CHANGE)
 	{
-		if(state.loaded)
+		if(state->loaded)
 		{
 			mpv_prop_change_handler(event->data, data);
 		}
@@ -782,7 +808,7 @@ static void mpv_event_handler(mpv_event *event, gpointer data)
 		title = gmpv_mpv_obj_get_property_string(mpv, "media-title");
 
 		gmpv_control_box_set_enabled(control_box, TRUE);
-		gmpv_control_box_set_playing_state(control_box, !state.paused);
+		gmpv_control_box_set_playing_state(control_box, !state->paused);
 		gmpv_playlist_set_indicator_pos(playlist, (gint)pos);
 		gmpv_control_box_set_seek_bar_length(control_box, (gint)length);
 		gtk_window_set_title(GTK_WINDOW(app->gui), title);
@@ -821,7 +847,7 @@ static void mpv_event_handler(mpv_event *event, gpointer data)
 	}
 	else if(event->event_id == MPV_EVENT_IDLE)
 	{
-		if(!state.init_load && !state.loaded)
+		if(!state->init_load && !state->loaded)
 		{
 			gmpv_main_window_reset(app->gui);
 			set_inhibit_idle(app, FALSE);
@@ -829,7 +855,7 @@ static void mpv_event_handler(mpv_event *event, gpointer data)
 	}
 	else if(event->event_id == MPV_EVENT_SHUTDOWN)
 	{
-		quit(app);
+		gmpv_application_quit(app);
 	}
 }
 
@@ -886,215 +912,6 @@ static void drag_data_handler(	GtkWidget *widget,
 
 	g_strfreev(uri_list);
 	g_free(type);
-}
-
-static gchar *get_full_keystr(guint keyval, guint state)
-{
-	/* strlen("Ctrl+Alt+Shift+Meta+")+1 == 21 */
-	const gsize max_modstr_len = 21;
-	gchar modstr[max_modstr_len];
-	gboolean found = FALSE;
-	const gchar *keystr = gdk_keyval_name(keyval);
-	const gchar *keystrmap[] = KEYSTRING_MAP;
-	modstr[0] = '\0';
-
-	if((state&GDK_SHIFT_MASK) != 0)
-	{
-		g_strlcat(modstr, "Shift+", max_modstr_len);
-	}
-
-	if((state&GDK_CONTROL_MASK) != 0)
-	{
-		g_strlcat(modstr, "Ctrl+", max_modstr_len);
-	}
-
-	if((state&GDK_MOD1_MASK) != 0)
-	{
-		g_strlcat(modstr, "Alt+", max_modstr_len);
-	}
-
-	if((state&GDK_META_MASK) != 0 || (state&GDK_SUPER_MASK) != 0)
-	{
-		g_strlcat(modstr, "Meta+", max_modstr_len);
-	}
-
-	/* Translate GDK key name to mpv key name */
-	for(gint i = 0; !found && keystrmap[i]; i += 2)
-	{
-		gint rc = g_ascii_strncasecmp(	keystr,
-						keystrmap[i+1],
-						KEYSTRING_MAX_LEN );
-
-		if(rc == 0)
-		{
-			keystr = keystrmap[i];
-			found = TRUE;
-		}
-	}
-
-	return (strlen(keystr) > 0)?g_strconcat(modstr, keystr, NULL):NULL;
-}
-
-static gboolean key_press_handler(	GtkWidget *widget,
-					GdkEvent *event,
-					gpointer data )
-{
-	const gchar *cmd[] = {"keydown", NULL, NULL};
-	GmpvApplication *app = data;
-	guint keyval = ((GdkEventKey*)event)->keyval;
-	guint state = ((GdkEventKey*)event)->state;
-	gchar *keystr = NULL;
-
-	cmd[1] = keystr = get_full_keystr(keyval, state);
-
-	if(keystr)
-	{
-		g_debug("Sent '%s' key down to mpv", keystr);
-		gmpv_mpv_obj_command(app->mpv, cmd);
-
-		g_free(keystr);
-	}
-
-	return FALSE;
-}
-
-static gboolean key_release_handler(	GtkWidget *widget,
-					GdkEvent *event,
-					gpointer data )
-{
-	GmpvApplication *app = data;
-	guint keyval = ((GdkEventKey*)event)->keyval;
-	guint state = ((GdkEventKey*)event)->state;
-	gchar *keystr = NULL;
-	const gchar *cmd[] = {"keyup", NULL, NULL};
-
-	cmd[1] = keystr = get_full_keystr(keyval, state);
-
-	if(keystr)
-	{
-		g_debug("Sent '%s' key up to mpv", keystr);
-		gmpv_mpv_obj_command(app->mpv, cmd);
-
-		g_free(keystr);
-	}
-
-	return FALSE;
-}
-
-static gboolean mouse_button_handler(	GtkWidget *widget,
-					GdkEvent *event,
-					gpointer data )
-{
-	GdkEventButton *btn_event = (GdkEventButton *)event;
-
-	if(btn_event->type == GDK_BUTTON_PRESS
-	|| btn_event->type == GDK_BUTTON_RELEASE
-	|| btn_event->type == GDK_SCROLL)
-	{
-		GmpvApplication *app = data;
-		gchar *btn_str =	g_strdup_printf
-					("MOUSE_BTN%u", btn_event->button-1);
-		const gchar *type_str =	(btn_event->type == GDK_SCROLL)?
-					"keypress":
-					(btn_event->type == GDK_BUTTON_PRESS)?
-					"keydown":"keyup";
-		const gchar *key_cmd[] = {type_str, btn_str, NULL};
-
-		g_debug(	"Sent %s event for button %s to mpv",
-				type_str, btn_str );
-
-		gmpv_mpv_obj_command(app->mpv, key_cmd);
-
-		g_free(btn_str);
-	}
-
-	return TRUE;
-}
-
-static gboolean mouse_move_handler(	GtkWidget *widget,
-					GdkEvent *event,
-					gpointer data )
-{
-	GmpvApplication *app = data;
-	GdkEventMotion *motion_event = (GdkEventMotion *)event;
-	gchar *x_str = g_strdup_printf("%d", (gint)motion_event->x);
-	gchar *y_str = g_strdup_printf("%d", (gint)motion_event->y);
-	const gchar *cmd[] = {"mouse", x_str, y_str, NULL};
-
-	gmpv_mpv_obj_command(app->mpv, cmd);
-
-	g_free(x_str);
-	g_free(y_str);
-
-	return FALSE;
-}
-
-static gboolean scroll_handler(	GtkWidget *widget,
-				GdkEvent *event,
-				gpointer data )
-{
-	GdkEventScroll *scroll_event = (GdkEventScroll *)event;
-	guint button = 0;
-	gint count = 0;
-
-	/* Only one axis will be used at a time to prevent accidental activation
-	 * of commands bound to buttons associated with the other axis.
-	 */
-	if(ABS(scroll_event->delta_x) > ABS(scroll_event->delta_y))
-	{
-		count = (gint)ABS(scroll_event->delta_x);
-
-		if(scroll_event->delta_x <= -1)
-		{
-			button = 6;
-		}
-		else if(scroll_event->delta_x >= 1)
-		{
-			button = 7;
-		}
-	}
-	else
-	{
-		count = (gint)ABS(scroll_event->delta_y);
-
-		if(scroll_event->delta_y <= -1)
-		{
-			button = 4;
-		}
-		else if(scroll_event->delta_y >= 1)
-		{
-			button = 5;
-		}
-	}
-
-	if(button > 0)
-	{
-		GdkEventButton btn_event;
-
-		btn_event.type = scroll_event->type;
-		btn_event.window = scroll_event->window;
-		btn_event.send_event = scroll_event->send_event;
-		btn_event.time = scroll_event->time;
-		btn_event.x = scroll_event->x;
-		btn_event.y = scroll_event->y;
-		btn_event.axes = NULL;
-		btn_event.state = scroll_event->state;
-		btn_event.button = button;
-		btn_event.device = scroll_event->device;
-		btn_event.x_root = scroll_event->x_root;
-		btn_event.y_root = scroll_event->y_root;
-
-		for(gint i = 0; i < count; i++)
-		{
-			/* Not used */
-			gboolean rc;
-
-			g_signal_emit_by_name
-				(widget, "button-press-event", &btn_event, &rc);
-		}
-	}
-
-	return TRUE;
 }
 
 static gboolean queue_render(GtkGLArea *area)
@@ -1168,10 +985,6 @@ static gboolean load_files(	GmpvApplication *app,
 				const gchar **files,
 				gboolean append )
 {
-	GmpvMpvObjState state;
-
-	gmpv_mpv_obj_get_state(app->mpv, &state);
-
 	if(files)
 	{
 		gmpv_mpv_obj_load_list(app->mpv, files, append, TRUE);
@@ -1192,6 +1005,7 @@ static void connect_signals(GmpvApplication *app)
 	playlist = gmpv_main_window_get_playlist(app->gui);
 	video_area = gmpv_main_window_get_video_area(app->gui);
 
+	gmpv_inputctl_connect_signals(app);
 	gmpv_playbackctl_connect_signals(app);
 
 	g_signal_connect_after(	app->gui,
@@ -1218,30 +1032,6 @@ static void connect_signals(GmpvApplication *app)
 				"delete-event",
 				G_CALLBACK(delete_handler),
 				app );
-	g_signal_connect(	app->gui,
-				"key-press-event",
-				G_CALLBACK(key_press_handler),
-				app );
-	g_signal_connect(	app->gui,
-				"key-release-event",
-				G_CALLBACK(key_release_handler),
-				app );
-	g_signal_connect(	video_area,
-				"button-press-event",
-				G_CALLBACK(mouse_button_handler),
-				app );
-	g_signal_connect(	video_area,
-				"button-release-event",
-				G_CALLBACK(mouse_button_handler),
-				app );
-	g_signal_connect(	video_area,
-				"motion-notify-event",
-				G_CALLBACK(mouse_move_handler),
-				app );
-	g_signal_connect(	video_area,
-				"scroll-event",
-				G_CALLBACK(scroll_handler),
-				app );
 	g_signal_connect(	playlist,
 				"row-activated",
 				G_CALLBACK(playlist_row_activated_handler),
@@ -1258,15 +1048,6 @@ static void connect_signals(GmpvApplication *app)
 				"mpv-error",
 				G_CALLBACK(mpv_error_handler),
 				app );
-}
-
-static inline void add_accelerator(	GtkApplication *app,
-					const char *accel,
-					const char *action )
-{
-	const char *const accels[] = {accel, NULL};
-
-	gtk_application_set_accels_for_action(app, action, accels);
 }
 
 static void gmpv_application_class_init(GmpvApplicationClass *klass)
@@ -1315,6 +1096,14 @@ static void gmpv_application_init(GmpvApplication *app)
 		(app, "open", G_CALLBACK(open_handler), app);
 }
 
+GmpvApplication *gmpv_application_new(gchar *id, GApplicationFlags flags)
+{
+	return GMPV_APPLICATION(g_object_new(	gmpv_application_get_type(),
+						"application-id", id,
+						"flags", flags,
+						NULL ));
+}
+
 GmpvMainWindow *gmpv_application_get_main_window(GmpvApplication *app)
 {
 	return app->gui;
@@ -1325,10 +1114,34 @@ GmpvMpvObj *gmpv_application_get_mpv_obj(GmpvApplication *app)
 	return app->mpv;
 }
 
-GmpvApplication *gmpv_application_new(gchar *id, GApplicationFlags flags)
+void gmpv_application_quit(GmpvApplication *app)
 {
-	return GMPV_APPLICATION(g_object_new(	gmpv_application_get_type(),
-						"application-id", id,
-						"flags", flags,
-						NULL ));
+	const gchar *cmd[] = {"quit", NULL};
+	GmpvMpvObj *mpv = gmpv_application_get_mpv_obj(app);
+	GmpvMainWindow *wnd = gmpv_application_get_main_window(app);
+
+	if(gmpv_mpv_obj_get_mpv_handle(mpv))
+	{
+		GmpvVideoArea *vid_area = gmpv_main_window_get_video_area(wnd);
+		GtkGLArea *gl_area = gmpv_video_area_get_gl_area(vid_area);
+
+		if(gtk_widget_get_realized(GTK_WIDGET(gl_area)))
+		{
+			/* Needed by gmpv_mpv_obj_quit() to uninitialize
+			 * opengl-cb
+			 */
+			gtk_gl_area_make_current(GTK_GL_AREA(gl_area));
+		}
+
+		gmpv_mpv_obj_command(mpv, cmd);
+		gmpv_mpv_obj_quit(mpv);
+	}
+
+	if(!gmpv_main_window_get_fullscreen(wnd))
+	{
+		gmpv_main_window_save_state(wnd);
+	}
+
+	g_application_quit(G_APPLICATION(app));
 }
+

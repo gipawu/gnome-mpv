@@ -8,21 +8,25 @@ mpris_files =	mpris/gmpv_mpris.c mpris/gmpv_mpris.h \
 		mpris/gmpv_mpris_player.c mpris/gmpv_mpris_player.h \
 		$(mpris_generated)
 $(mpris_generated): $(top_srcdir)/data/gmpv_mpris_gdbus.xml
+	$(AM_V_GEN) \
 	$(GDBUS_CODEGEN) --c-namespace gmpv_mpris --generate-c-code mpris/gmpv_mpris_gdbus $< && \
-	sed -i '1i#pragma GCC diagnostic ignored \"-Wconversion\"' mpris/gmpv_mpris_gdbus.c
+	$(SED) -i '1i#pragma GCC diagnostic ignored \"-Wconversion\"' mpris/gmpv_mpris_gdbus.c
 
 marshal_generated = gmpv_marshal.c gmpv_marshal.h
 marshal_files = $(marshal_generated)
 gmpv_marshal.h: $(top_srcdir)/data/gmpv_marshal.lst
+	$(AM_V_GEN) \
 	$(GLIB_GENMARSHAL) --prefix="g_cclosure_gen_marshal" --header $< > $@
 gmpv_marshal.c: $(top_srcdir)/data/gmpv_marshal.lst
-	$(GLIB_GENMARSHAL) --prefix="g_cclosure_gen_marshal" --body $< > $@
-	sed -i '1i#pragma GCC diagnostic ignored \"-Wmissing-prototypes\"' $@
+	$(AM_V_GEN) \
+	$(GLIB_GENMARSHAL) --prefix="g_cclosure_gen_marshal" --body $< > $@ && \
+	$(SED) -i '1i#pragma GCC diagnostic ignored \"-Wmissing-prototypes\"' $@
 
 authors_generated = gmpv_authors.h
 authors_files = $(authors_generated)
 gmpv_authors.h: $(top_srcdir)/AUTHORS
-	awk	'BEGIN{print	"#ifndef AUTHORS_H\n" \
+	$(AM_V_GEN) \
+	$(AWK)	'BEGIN{print	"#ifndef AUTHORS_H\n" \
 				"#define AUTHORS_H\n\n" \
 				"#define AUTHORS {\\"} \
 		/^[^#].+/{print "\"" $$0 "\",\\"} \
@@ -37,6 +41,7 @@ gnome_mpv_SOURCES =	gmpv_main.c gmpv_def.h \
 			gmpv_application.c gmpv_application.h \
 			gmpv_common.c gmpv_common.h \
 			gmpv_control_box.c gmpv_control_box.h \
+			gmpv_inputctl.c gmpv_inputctl.h \
 			gmpv_main_window.c gmpv_main_window.h \
 			gmpv_menu.c gmpv_menu.h \
 			gmpv_mpv_obj.c gmpv_mpv_obj.h \

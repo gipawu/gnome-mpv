@@ -17,25 +17,14 @@
  * along with GNOME MPV.  If not, see <http://www.gnu.org/licenses/>.
  */
 
-#ifndef APPLICATION_H
-#define APPLICATION_H
+#ifndef INPUTCTL_H
+#define INPUTCTL_H
 
-#include <gtk/gtk.h>
-
-#include "gmpv_main_window.h"
-#include "gmpv_playlist.h"
-#include "gmpv_mpv_obj.h"
+#include "gmpv_application.h"
 
 G_BEGIN_DECLS
 
-#define GMPV_TYPE_APPLICATION (gmpv_application_get_type())
-
-G_DECLARE_FINAL_TYPE(GmpvApplication, gmpv_application, GMPV, APPLICATION, GtkApplication)
-
-GmpvApplication *gmpv_application_new(gchar *id, GApplicationFlags flags);
-GmpvMainWindow *gmpv_application_get_main_window(GmpvApplication *app);
-GmpvMpvObj *gmpv_application_get_mpv_obj(GmpvApplication *app);
-void gmpv_application_quit(GmpvApplication *app);
+void gmpv_inputctl_connect_signals(GmpvApplication *app);
 
 G_END_DECLS
 

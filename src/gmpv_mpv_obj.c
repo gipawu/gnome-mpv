@@ -49,6 +49,7 @@
 #include "gmpv_control_box.h"
 #include "gmpv_playlist_widget.h"
 
+static void *GLAPIENTRY glMPGetNativeDisplay(const gchar *name);
 static void *get_proc_address(void *fn_ctx, const gchar *name);
 static void gmpv_mpv_obj_set_inst_property(	GObject *object,
 						guint property_id,
@@ -68,9 +69,28 @@ static void load_input_conf(GmpvMpvObj *mpv, const gchar *input_conf);
 
 G_DEFINE_TYPE(GmpvMpvObj, gmpv_mpv_obj, G_TYPE_OBJECT)
 
+static void *GLAPIENTRY glMPGetNativeDisplay(const gchar *name)
+{
+       GdkDisplay *display = gdk_display_get_default();
+
+#ifdef GDK_WINDOWING_WAYLAND
+       if(GDK_IS_WAYLAND_DISPLAY(display) && g_strcmp0(name, "wl") == 0)
+               return gdk_wayland_display_get_wl_display(display);
+#endif
+#ifdef GDK_WINDOWING_X11
+       if(GDK_IS_X11_DISPLAY(display) && g_strcmp0(name, "x11") == 0)
+               return gdk_x11_display_get_xdisplay(display);
+#endif
+
+       return NULL;
+}
+
 static void *get_proc_address(void *fn_ctx, const gchar *name)
 {
 	GdkDisplay *display = gdk_display_get_default();
+
+	if(g_strcmp0(name, "glMPGetNativeDisplay") == 0)
+		return glMPGetNativeDisplay;
 
 #ifdef GDK_WINDOWING_WAYLAND
 	if (GDK_IS_WAYLAND_DISPLAY(display))
@@ -665,6 +685,7 @@ static void gmpv_mpv_obj_init(GmpvMpvObj *mpv)
 	mpv->tmp_input_file = NULL;
 	mpv->log_level_list = NULL;
 	mpv->autofit_ratio = -1;
+	mpv->geometry = NULL;
 
 	mpv->state.ready = FALSE;
 	mpv->state.paused = TRUE;
@@ -900,14 +921,14 @@ void mpv_check_error(int status)
 	}
 }
 
-inline gboolean gmpv_mpv_obj_is_loaded(GmpvMpvObj *mpv)
+inline const GmpvMpvObjState *gmpv_mpv_obj_get_state(GmpvMpvObj *mpv)
 {
-	return mpv->state.loaded;
+	return &mpv->state;
 }
 
-inline void gmpv_mpv_obj_get_state(GmpvMpvObj *mpv, GmpvMpvObjState *state)
+inline GmpvGeometry *gmpv_mpv_obj_get_geometry(GmpvMpvObj *mpv)
 {
-	memcpy(state, &mpv->state, sizeof(GmpvMpvObjState));
+	return mpv->geometry;
 }
 
 inline gdouble gmpv_mpv_obj_get_autofit_ratio(GmpvMpvObj *mpv)
@@ -1084,6 +1105,7 @@ void gmpv_mpv_obj_initialize(GmpvMpvObj *mpv)
 
 		gmpv_mpv_opt_handle_msg_level(mpv);
 		gmpv_mpv_opt_handle_fs(mpv);
+		gmpv_mpv_opt_handle_geometry(mpv);
 
 		mpv->force_opengl = FALSE;
 		mpv->state.ready = TRUE;
@@ -1106,7 +1128,7 @@ void gmpv_mpv_obj_init_gl(GmpvMpvObj *mpv)
 
 	opengl_ctx = gmpv_mpv_obj_get_opengl_cb_context(mpv);
 	rc = mpv_opengl_cb_init_gl(	opengl_ctx,
-					NULL,
+					"GL_MP_MPGetNativeDisplay",
 					get_proc_address,
 					NULL );
 
@@ -1352,7 +1374,7 @@ void gmpv_mpv_obj_load_list(	GmpvMpvObj *mpv,
 		 * already is a file loaded. Try to load the file as a
 		 * media file otherwise.
 		 */
-		if(ext && sub_exts[j] && gmpv_mpv_obj_is_loaded(mpv))
+		if(ext && sub_exts[j] && gmpv_mpv_obj_get_state(mpv)->loaded)
 		{
 			const gchar *cmd[] = {"sub-add", NULL, NULL};
 			gchar *path;

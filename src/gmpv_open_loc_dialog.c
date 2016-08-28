@@ -54,10 +54,10 @@ static void gmpv_open_loc_dialog_init(GmpvOpenLocDialog *dlg)
 	dlg->loc_entry = gtk_entry_new();
 
 	gtk_dialog_add_buttons(	GTK_DIALOG(dlg),
-				_("_Open"),
-				GTK_RESPONSE_ACCEPT,
 				_("_Cancel"),
 				GTK_RESPONSE_REJECT,
+				_("_Open"),
+				GTK_RESPONSE_ACCEPT,
 				NULL );
 
 	gtk_window_set_geometry_hints(	GTK_WINDOW(dlg),
@@ -66,7 +66,6 @@ static void gmpv_open_loc_dialog_init(GmpvOpenLocDialog *dlg)
 					GDK_HINT_MAX_SIZE );
 
 	gtk_window_set_modal(GTK_WINDOW(dlg), 1);
-	gtk_window_set_title(GTK_WINDOW(dlg), _("Open Location"));
 	gtk_container_set_border_width(GTK_CONTAINER(dlg->content_area), 12);
 
 	if(!gtk_dialog_get_header_bar(GTK_DIALOG(dlg)))
@@ -98,7 +97,7 @@ static void gmpv_open_loc_dialog_init(GmpvOpenLocDialog *dlg)
 	gtk_entry_set_activates_default(GTK_ENTRY(dlg->loc_entry), TRUE);
 }
 
-GtkWidget *gmpv_open_loc_dialog_new(GtkWindow *parent)
+GtkWidget *gmpv_open_loc_dialog_new(GtkWindow *parent, const gchar *title)
 {
 	GtkWidget *dlg;
 	GtkWidget *header_bar;
@@ -108,6 +107,7 @@ GtkWidget *gmpv_open_loc_dialog_new(GtkWindow *parent)
 
 	dlg = g_object_new(	gmpv_open_loc_dialog_get_type(),
 				"use-header-bar", csd_enabled,
+				"title", title,
 				NULL );
 
 	header_bar = gtk_dialog_get_header_bar(GTK_DIALOG(dlg));
