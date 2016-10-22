@@ -38,9 +38,15 @@ capabilities.
 - Frugalware: http://www4.frugalware.org/pub/linux/distributions/frugalware/frugalware-current/source/xapps-extra/gnome-mpv/
 - OpenSUSE: https://build.opensuse.org/package/show/home:mermoldy:multimedia/gnome-mpv
 - Gentoo: http://gpo.zugaina.org/media-video/gnome-mpv
-- Guix: https://www.gnu.org/software/guix/packages/#gnome-mpv
 - Solus: https://packages.solus-project.com/v1/g/gnome-mpv/
 - Ubuntu: https://launchpad.net/~xuzhen666/+archive/ubuntu/gnome-mpv
+
+### Guix
+To install with Guix, run the following command:
+
+```sh
+guix package -i gnome-mpv
+```
 
 ### Flatpak
 Flatpak builds can be obtained from https://dl.tingping.se/flatpak/. The build
@@ -99,6 +105,19 @@ preferences dialog under the "MPV Configuration" section.
 
 Options can also be set using the "Extra MPV Options" text box in the
 preferences dialog. The syntax used is the same as mpv's command line options.
+
+### Lua Scripts
+
+GNOME MPV can use most mpv Lua scripts as-is. Some Lua scripts may define
+keybindings that conflict with GNOME MPV, in which case you'll need to resolve
+the conflict by explicitly defining new keybindings using `input.conf`. See
+[mpv's manual](https://mpv.io/manual/stable/#lua-scripting-[,flags]]%29) for
+more details.
+
+Lua scripts can be installed by switching to the `Lua Scripts` tab in the
+preferences dialog and dropping script files there. A list of mpv Lua scripts
+can be found
+[here](https://github.com/mpv-player/mpv/wiki/User-Scripts#lua-scripts).
 
 ### Keybindings
 

@@ -381,6 +381,12 @@ void gmpv_control_box_set_fullscreen_state(	GmpvControlBox *box,
 				fullscreen_icon );
 }
 
+void gmpv_control_box_set_fullscreen_btn_visible(	GmpvControlBox *box,
+							gboolean value )
+{
+	gtk_widget_set_visible(box->fullscreen_button, value);
+}
+
 void gmpv_control_box_reset(GmpvControlBox *box)
 {
 	gmpv_control_box_set_seek_bar_pos(box, 0);

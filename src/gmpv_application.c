@@ -32,7 +32,7 @@
 #include "gmpv_playlist_widget.h"
 #include "gmpv_track.h"
 #include "gmpv_menu.h"
-#include "gmpv_mpv_obj.h"
+#include "gmpv_mpv.h"
 #include "gmpv_video_area.h"
 #include "gmpv_def.h"
 #include "mpris/gmpv_mpris.h"
@@ -42,7 +42,7 @@ struct _GmpvApplication
 {
 	GtkApplication parent;
 	gboolean no_existing_session;
-	GmpvMpvObj *mpv;
+	GmpvMpv *mpv;
 	GQueue *action_queue;
 	gchar **files;
 	guint inhibit_cookie;
@@ -97,7 +97,7 @@ static gchar *strnjoinv(	const gchar *separator,
 static gboolean process_action(gpointer data);
 static void mpv_prop_change_handler(mpv_event_property *prop, gpointer data);
 static void mpv_event_handler(mpv_event *event, gpointer data);
-static void mpv_error_handler(GmpvMpvObj *mpv, const gchar *err, gpointer data);
+static void mpv_error_handler(GmpvMpv *mpv, const gchar *err, gpointer data);
 static gboolean shutdown_signal_handler(gpointer data);
 static void drag_data_handler(	GtkWidget *widget,
 				GdkDragContext *context,
@@ -107,6 +107,9 @@ static void drag_data_handler(	GtkWidget *widget,
 				guint info,
 				guint time,
 				gpointer data);
+static gboolean window_state_handler(	GtkWidget *widget,
+					GdkEvent *event,
+					gpointer data );
 static gboolean queue_render(GtkGLArea *area);
 static void opengl_cb_update_callback(void *cb_ctx);
 static void set_playlist_pos(GmpvApplication *app, gint64 pos);
@@ -127,7 +130,7 @@ static gboolean vid_area_render_handler(	GtkGLArea *area,
 	GmpvApplication *app = data;
 	mpv_opengl_cb_context *opengl_ctx;
 
-	opengl_ctx = gmpv_mpv_obj_get_opengl_cb_context(app->mpv);
+	opengl_ctx = gmpv_mpv_get_opengl_cb_context(app->mpv);
 
 	if(opengl_ctx)
 	{
@@ -306,10 +309,16 @@ static void startup_handler(GApplication *gapp, gpointer data)
 	gmpv_main_window_load_state(app->gui);
 	gtk_widget_show_all(GTK_WIDGET(app->gui));
 
+	if(csd_enable)
+	{
+		gmpv_control_box_set_fullscreen_btn_visible
+			(control_box, FALSE);
+	}
+
 	gmpv_control_box_set_chapter_enabled(control_box, FALSE);
 
 	wid = gmpv_video_area_get_xid(gmpv_main_window_get_video_area(app->gui));
-	app->mpv = gmpv_mpv_obj_new(app->playlist_store, wid);
+	app->mpv = gmpv_mpv_new(app->playlist_store, wid);
 
 	gmpv_control_box_set_chapter_enabled(control_box, FALSE);
 
@@ -334,10 +343,10 @@ static void activate_handler(GApplication *gapp, gpointer data)
 	gtk_window_present(GTK_WINDOW(GMPV_APPLICATION(data)->gui));
 }
 
-static void mpv_init_handler(GmpvMpvObj *mpv, gpointer data)
+static void mpv_init_handler(GmpvMpv *mpv, gpointer data)
 {
 	GmpvApplication *app = data;
-	gchar *current_vo = gmpv_mpv_obj_get_property_string(mpv, "current-vo");
+	gchar *current_vo = gmpv_mpv_get_property_string(mpv, "current-vo");
 	GmpvVideoArea *vid_area = gmpv_main_window_get_video_area(app->gui);
 
 	gmpv_video_area_set_use_opengl(vid_area, !current_vo);
@@ -353,7 +362,7 @@ static void mpv_init_handler(GmpvMpvObj *mpv, gpointer data)
 					app );
 
 		gtk_gl_area_make_current(gl_area);
-		gmpv_mpv_obj_init_gl(app->mpv);
+		gmpv_mpv_init_gl(app->mpv);
 	}
 
 	mpv_free(current_vo);
@@ -381,7 +390,7 @@ static void open_handler(	GApplication *gapp,
 
 		app->files[i] = NULL;
 
-		if(gmpv_mpv_obj_get_state(app->mpv)->ready)
+		if(gmpv_mpv_get_state(app->mpv)->ready)
 		{
 			load_files(app, (const gchar **)app->files, append);
 		}
@@ -404,12 +413,12 @@ static gboolean draw_handler(GtkWidget *widget, cairo_t *cr, gpointer data)
 						NULL,
 						app );
 
-	gmpv_mpv_obj_initialize(app->mpv);
+	gmpv_mpv_initialize(app->mpv);
 	gmpv_main_window_set_geometry
-		(app->gui, gmpv_mpv_obj_get_geometry(app->mpv));
-	gmpv_mpv_obj_set_opengl_cb_callback
+		(app->gui, gmpv_mpv_get_geometry(app->mpv));
+	gmpv_mpv_set_opengl_cb_callback
 		(app->mpv, opengl_cb_update_callback, app);
-	gmpv_mpv_obj_set_event_callback
+	gmpv_mpv_set_event_callback
 		(app->mpv, mpv_event_handler, app);
 
 	if(!app->files)
@@ -442,7 +451,7 @@ static void grab_handler(GtkWidget *widget, gboolean was_grabbed, gpointer data)
 		g_debug(	"Main window has been shadowed; "
 				"sending global keyup to mpv" );
 
-		gmpv_mpv_obj_command_string(app->mpv, "keyup");
+		gmpv_mpv_command_string(app->mpv, "keyup");
 	}
 }
 
@@ -459,14 +468,14 @@ static void playlist_row_deleted_handler(	GmpvPlaylistWidget *playlist,
 {
 	GmpvApplication *app = data;
 
-	if(gmpv_mpv_obj_get_state(app->mpv)->loaded)
+	if(gmpv_mpv_get_state(app->mpv)->loaded)
 	{
 		const gchar *cmd[] = {"playlist_remove", NULL, NULL};
 		gchar *index_str = g_strdup_printf("%d", pos);
 
 		cmd[1] = index_str;
 
-		gmpv_mpv_obj_command(app->mpv, cmd);
+		gmpv_mpv_command(app->mpv, cmd);
 
 		g_free(index_str);
 	}
@@ -494,7 +503,7 @@ static void playlist_row_reodered_handler(	GmpvPlaylistWidget *playlist,
 	cmd[1] = src_str;
 	cmd[2] = dest_str;
 
-	gmpv_mpv_obj_command(app->mpv, cmd);
+	gmpv_mpv_command(app->mpv, cmd);
 
 	g_free(src_str);
 	g_free(dest_str);
@@ -552,7 +561,7 @@ static void update_track_list(GmpvApplication *app, mpv_node* track_list)
 			{"sid", "set-subtitle-track"},
 			{NULL, NULL} };
 
-	GmpvMpvObj *mpv = app->mpv;
+	GmpvMpv *mpv = app->mpv;
 	mpv_node_list *org_list = track_list->u.list;
 	GSList *audio_list = NULL;
 	GSList *video_list = NULL;
@@ -566,14 +575,14 @@ static void update_track_list(GmpvApplication *app, mpv_node* track_list)
 
 		action =	g_action_map_lookup_action
 				(G_ACTION_MAP(app), track_map[i].action_name);
-		buf =	gmpv_mpv_obj_get_property_string
+		buf =	gmpv_mpv_get_property_string
 			(mpv, track_map[i].prop_name);
 		val = g_ascii_strtoll(buf, NULL, 10);
 
 		g_simple_action_set_state
 			(G_SIMPLE_ACTION(action), g_variant_new_int64(val));
 
-		gmpv_mpv_obj_free(buf);
+		gmpv_mpv_free(buf);
 	}
 
 	for(gint i = 0; i < org_list->num; i++)
@@ -645,9 +654,9 @@ static gboolean process_action(gpointer data)
 static void mpv_prop_change_handler(mpv_event_property *prop, gpointer data)
 {
 	GmpvApplication *app = data;
-	GmpvMpvObj *mpv = app->mpv;
+	GmpvMpv *mpv = app->mpv;
 	GmpvControlBox *control_box = gmpv_main_window_get_control_box(app->gui);
-	const GmpvMpvObjState *state = gmpv_mpv_obj_get_state(mpv);
+	const GmpvMpvState *state = gmpv_mpv_get_state(mpv);
 
 	if(g_strcmp0(prop->name, "pause") == 0)
 	{
@@ -686,7 +695,7 @@ static void mpv_prop_change_handler(mpv_event_property *prop, gpointer data)
 	}
 	else if(g_strcmp0(prop->name, "playlist-pos") == 0 && prop->data)
 	{
-		GmpvPlaylist *playlist = gmpv_mpv_obj_get_playlist(mpv);
+		GmpvPlaylist *playlist = gmpv_mpv_get_playlist(mpv);
 		gint64 pos = *((gint64 *)prop->data);
 
 		gmpv_playlist_set_indicator_pos(playlist, (gint)pos);
@@ -708,12 +717,12 @@ static void mpv_prop_change_handler(mpv_event_property *prop, gpointer data)
 static void mpv_event_handler(mpv_event *event, gpointer data)
 {
 	GmpvApplication *app = data;
-	GmpvMpvObj *mpv = app->mpv;
-	const GmpvMpvObjState *state = gmpv_mpv_obj_get_state(mpv);
+	GmpvMpv *mpv = app->mpv;
+	const GmpvMpvState *state = gmpv_mpv_get_state(mpv);
 
 	if(event->event_id == MPV_EVENT_VIDEO_RECONFIG)
 	{
-		gdouble autofit_ratio = gmpv_mpv_obj_get_autofit_ratio(app->mpv);
+		gdouble autofit_ratio = gmpv_mpv_get_autofit_ratio(app->mpv);
 
 		if(state->new_file && autofit_ratio > 0)
 		{
@@ -736,11 +745,11 @@ static void mpv_event_handler(mpv_event *event, gpointer data)
 		gdouble length = 0;
 
 		control_box = gmpv_main_window_get_control_box(app->gui);
-		playlist = gmpv_mpv_obj_get_playlist(mpv);
+		playlist = gmpv_mpv_get_playlist(mpv);
 
 		if(app->target_playlist_pos != -1)
 		{
-			gmpv_mpv_obj_set_property
+			gmpv_mpv_set_property
 				(	mpv,
 					"playlist-pos",
 					MPV_FORMAT_INT64,
@@ -749,12 +758,12 @@ static void mpv_event_handler(mpv_event *event, gpointer data)
 			app->target_playlist_pos = -1;
 		}
 
-		gmpv_mpv_obj_get_property
+		gmpv_mpv_get_property
 			(mpv, "playlist-pos", MPV_FORMAT_INT64, &pos);
-		gmpv_mpv_obj_get_property
+		gmpv_mpv_get_property
 			(mpv, "length", MPV_FORMAT_DOUBLE, &length);
 
-		title = gmpv_mpv_obj_get_property_string(mpv, "media-title");
+		title = gmpv_mpv_get_property_string(mpv, "media-title");
 
 		gmpv_control_box_set_enabled(control_box, TRUE);
 		gmpv_control_box_set_playing_state(control_box, !state->paused);
@@ -762,7 +771,7 @@ static void mpv_event_handler(mpv_event *event, gpointer data)
 		gmpv_control_box_set_seek_bar_length(control_box, (gint)length);
 		gtk_window_set_title(GTK_WINDOW(app->gui), title);
 
-		gmpv_mpv_obj_free(title);
+		gmpv_mpv_free(title);
 	}
 	else if(event->event_id == MPV_EVENT_CLIENT_MESSAGE)
 	{
@@ -808,7 +817,7 @@ static void mpv_event_handler(mpv_event *event, gpointer data)
 	}
 }
 
-static void mpv_error_handler(GmpvMpvObj *mpv, const gchar *err, gpointer data)
+static void mpv_error_handler(GmpvMpv *mpv, const gchar *err, gpointer data)
 {
 	GmpvApplication *app = data;
 
@@ -853,22 +862,49 @@ static void drag_data_handler(	GtkWidget *widget,
 	{
 		if(uri_list)
 		{
-			gmpv_mpv_obj_load_list(	app->mpv,
+			gmpv_mpv_load_list(	app->mpv,
 						(const gchar **)uri_list,
 						append,
 						TRUE );
 		}
 		else
 		{
-			gmpv_mpv_obj_load(	app->mpv,
-						(const gchar *)raw_data,
-						append,
-						TRUE );
+			gmpv_mpv_load(	app->mpv,
+					(const gchar *)raw_data,
+					append,
+					TRUE );
 		}
 	}
 
 	g_strfreev(uri_list);
 	g_free(type);
+}
+
+static gboolean window_state_handler(	GtkWidget *widget,
+					GdkEvent *event,
+					gpointer data )
+{
+	GtkApplication *app = data;
+	GdkEventWindowState *state = (GdkEventWindowState *)event;
+
+	if(state->changed_mask&GDK_WINDOW_STATE_FULLSCREEN)
+	{
+		gboolean fullscreen;
+		GAction *action;
+
+		fullscreen =	state->new_window_state&
+				GDK_WINDOW_STATE_FULLSCREEN;
+
+		action = g_action_map_lookup_action(	G_ACTION_MAP(app),
+							"toggle-playlist" );
+		g_object_set(action, "enabled", !fullscreen, NULL);
+
+		action = g_action_map_lookup_action(	G_ACTION_MAP(app),
+							"set-video-size" );
+		g_object_set(action, "enabled", !fullscreen, NULL);
+	}
+
+	return FALSE;
 }
 
 static gboolean queue_render(GtkGLArea *area)
@@ -895,21 +931,21 @@ static void set_playlist_pos(GmpvApplication *app, gint64 pos)
 	gint64 mpv_pos;
 	gint rc;
 
-	rc = gmpv_mpv_obj_get_property(	app->mpv,
+	rc = gmpv_mpv_get_property(	app->mpv,
 					"playlist-pos",
 					MPV_FORMAT_INT64,
 					&mpv_pos );
 
-	gmpv_mpv_obj_set_property_flag(app->mpv, "pause", FALSE);
+	gmpv_mpv_set_property_flag(app->mpv, "pause", FALSE);
 
 	if(pos != mpv_pos)
 	{
 		if(rc >= 0)
 		{
-			gmpv_mpv_obj_set_property(	app->mpv,
-							"playlist-pos",
-							MPV_FORMAT_INT64,
-							&pos );
+			gmpv_mpv_set_property(	app->mpv,
+						"playlist-pos",
+						MPV_FORMAT_INT64,
+						&pos );
 		}
 		else
 		{
@@ -944,7 +980,7 @@ static gboolean load_files(	GmpvApplication *app,
 {
 	if(files)
 	{
-		gmpv_mpv_obj_load_list(app->mpv, files, append, TRUE);
+		gmpv_mpv_load_list(app->mpv, files, append, TRUE);
 
 		g_strfreev(app->files);
 
@@ -984,6 +1020,10 @@ static void connect_signals(GmpvApplication *app)
 	g_signal_connect(	playlist,
 				"drag-data-received",
 				G_CALLBACK(drag_data_handler),
+				app );
+	g_signal_connect(	app->gui,
+				"window-state-event",
+				G_CALLBACK(window_state_handler),
 				app );
 	g_signal_connect(	app->gui,
 				"grab-notify",
@@ -1070,7 +1110,7 @@ GmpvMainWindow *gmpv_application_get_main_window(GmpvApplication *app)
 	return app->gui;
 }
 
-GmpvMpvObj *gmpv_application_get_mpv_obj(GmpvApplication *app)
+GmpvMpv *gmpv_application_get_mpv(GmpvApplication *app)
 {
 	return app->mpv;
 }
@@ -1078,24 +1118,24 @@ GmpvMpvObj *gmpv_application_get_mpv_obj(GmpvApplication *app)
 void gmpv_application_quit(GmpvApplication *app)
 {
 	const gchar *cmd[] = {"quit", NULL};
-	GmpvMpvObj *mpv = gmpv_application_get_mpv_obj(app);
+	GmpvMpv *mpv = gmpv_application_get_mpv(app);
 	GmpvMainWindow *wnd = gmpv_application_get_main_window(app);
 
-	if(gmpv_mpv_obj_get_mpv_handle(mpv))
+	if(gmpv_mpv_get_mpv_handle(mpv))
 	{
 		GmpvVideoArea *vid_area = gmpv_main_window_get_video_area(wnd);
 		GtkGLArea *gl_area = gmpv_video_area_get_gl_area(vid_area);
 
 		if(gtk_widget_get_realized(GTK_WIDGET(gl_area)))
 		{
-			/* Needed by gmpv_mpv_obj_quit() to uninitialize
+			/* Needed by gmpv_mpv_quit() to uninitialize
 			 * opengl-cb
 			 */
 			gtk_gl_area_make_current(GTK_GL_AREA(gl_area));
 		}
 
-		gmpv_mpv_obj_command(mpv, cmd);
-		gmpv_mpv_obj_quit(mpv);
+		gmpv_mpv_command(mpv, cmd);
+		gmpv_mpv_quit(mpv);
 	}
 
 	if(!gmpv_main_window_get_fullscreen(wnd))
