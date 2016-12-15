@@ -20,6 +20,8 @@
 #ifndef CONTROL_BOX_H
 #define CONTROL_BOX_H
 
+#include <glib.h>
+#include <glib-object.h>
 #include <gtk/gtk.h>
 
 G_BEGIN_DECLS
@@ -32,7 +34,7 @@ GtkWidget *gmpv_control_box_new(void);
 void gmpv_control_box_set_enabled(GmpvControlBox *box, gboolean enabled);
 void gmpv_control_box_set_chapter_enabled(GmpvControlBox *box, gboolean enabled);
 void gmpv_control_box_set_seek_bar_pos(GmpvControlBox *box, gdouble pos);
-void gmpv_control_box_set_seek_bar_length(GmpvControlBox *box, gint length);
+void gmpv_control_box_set_seek_bar_duration(GmpvControlBox *box, gint duration);
 void gmpv_control_box_set_volume(GmpvControlBox *box, gdouble volume);
 gdouble gmpv_control_box_get_volume(GmpvControlBox *box);
 gboolean gmpv_control_box_get_volume_popup_visible(GmpvControlBox *box);

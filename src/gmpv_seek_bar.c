@@ -17,6 +17,8 @@
  * along with GNOME MPV.  If not, see <http://www.gnu.org/licenses/>.
  */
 
+#include <glib.h>
+#include <glib-object.h>
 #include <gtk/gtk.h>
 
 #include "gmpv_seek_bar.h"
@@ -27,7 +29,7 @@ struct _GmpvSeekBar
 	GtkWidget *seek_bar;
 	GtkWidget *label;
 	gdouble pos;
-	gdouble length;
+	gdouble duration;
 };
 
 struct _GmpvSeekBarClass
@@ -50,7 +52,7 @@ static void change_value_handler(	GtkWidget *widget,
 {
 	GmpvSeekBar *bar = data;
 
-	if(bar->length > 0)
+	if(bar->duration > 0)
 	{
 		update_label(data);
 		g_signal_emit_by_name(data, "seek", value);
@@ -60,29 +62,29 @@ static void change_value_handler(	GtkWidget *widget,
 static void update_label(GmpvSeekBar *bar)
 {
 	gint sec = (gint)bar->pos;
-	gint length = (gint)bar->length;
+	gint duration = (gint)bar->duration;
 	gchar *output;
 
 	/* Longer than one hour */
-	if(length > 3600)
+	if(duration > 3600)
 	{
 		output = g_strdup_printf(	"%02d:%02d:%02d/"
 						"%02d:%02d:%02d",
 						sec/3600,
 						(sec%3600)/60,
 						sec%60,
-						length/3600,
-						(length%3600)/60,
-						length%60 );
+						duration/3600,
+						(duration%3600)/60,
+						duration%60 );
 	}
-	else if(length > 0)
+	else if(duration > 0)
 	{
 		output = g_strdup_printf(	"%02d:%02d/"
 						"%02d:%02d",
 						(sec%3600)/60,
 						sec%60,
-						(length%3600)/60,
-						length%60 );
+						(duration%3600)/60,
+						duration%60 );
 	}
 	else
 	{
@@ -110,7 +112,7 @@ static void gmpv_seek_bar_init(GmpvSeekBar *bar)
 {
 	bar->seek_bar = gtk_scale_new(GTK_ORIENTATION_HORIZONTAL, NULL);
 	bar->label = gtk_label_new("");
-	bar->length = 0;
+	bar->duration = 0;
 	bar->pos = 0;
 
 	update_label(bar);
@@ -132,12 +134,12 @@ GtkWidget *gmpv_seek_bar_new()
 	return GTK_WIDGET(g_object_new(gmpv_seek_bar_get_type(), NULL));
 }
 
-void gmpv_seek_bar_set_length(GmpvSeekBar *bar, gdouble length)
+void gmpv_seek_bar_set_duration(GmpvSeekBar *bar, gdouble duration)
 {
-	bar->length = length;
+	bar->duration = duration;
 
 	update_label(bar);
-	gtk_range_set_range(GTK_RANGE(bar->seek_bar), 0, length);
+	gtk_range_set_range(GTK_RANGE(bar->seek_bar), 0, duration);
 }
 
 void gmpv_seek_bar_set_pos(GmpvSeekBar *bar, gdouble pos)

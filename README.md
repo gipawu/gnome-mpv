@@ -18,7 +18,7 @@ capabilities.
 - gcc (build)
 - glib >= 2.44
 - gtk >= 3.18<sup>[[2]](#note2)</sup>
-- mpv >= 0.17
+- mpv >= 0.21
 - epoxy
 - lua (optional)
 - youtube-dl (optional)
@@ -34,7 +34,7 @@ capabilities.
 - Arch Linux (Git): https://aur.archlinux.org/packages/gnome-mpv-git
 - Debian testing: https://packages.debian.org/testing/gnome-mpv
 - Debian unstable: https://packages.debian.org/sid/gnome-mpv
-- Fedora (russianfedora): http://koji.russianfedora.pro/koji/packageinfo?packageID=155
+- Fedora (rpmfusion): https://admin.rpmfusion.org/pkgdb/package/free/gnome-mpv/
 - Frugalware: http://www4.frugalware.org/pub/linux/distributions/frugalware/frugalware-current/source/xapps-extra/gnome-mpv/
 - OpenSUSE: https://build.opensuse.org/package/show/home:mermoldy:multimedia/gnome-mpv
 - Gentoo: http://gpo.zugaina.org/media-video/gnome-mpv

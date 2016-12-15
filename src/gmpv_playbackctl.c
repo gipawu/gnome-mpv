@@ -17,12 +17,16 @@
  * along with GNOME MPV.  If not, see <http://www.gnu.org/licenses/>.
  */
 
+#include <glib-object.h>
+#include <mpv/client.h>
 #include <gtk/gtk.h>
 
 #include "gmpv_playbackctl.h"
 #include "gmpv_control_box.h"
 #include "gmpv_common.h"
 #include "gmpv_mpv.h"
+#include "gmpv_mpv_wrapper.h"
+#include "gmpv_main_window.h"
 
 static void play_handler(GtkWidget *widget, gpointer data);
 static void stop_handler(GtkWidget *widget, gpointer data);

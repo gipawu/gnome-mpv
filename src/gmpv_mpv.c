@@ -17,6 +17,11 @@
  * along with GNOME MPV.  If not, see <http://www.gnu.org/licenses/>.
  */
 
+#include <gio/gio.h>
+#include <gtk/gtk.h>
+#include <stdio.h>
+#include <unistd.h>
+#include <glib-object.h>
 #include <glib/gi18n.h>
 #include <glib/gstdio.h>
 #include <gdk/gdk.h>
@@ -40,14 +45,11 @@
 
 #include "gmpv_mpv.h"
 #include "gmpv_mpv_private.h"
+#include "gmpv_mpv_wrapper.h"
 #include "gmpv_mpv_opt.h"
-#include "gmpv_application.h"
 #include "gmpv_common.h"
 #include "gmpv_def.h"
-#include "gmpv_track.h"
 #include "gmpv_playlist.h"
-#include "gmpv_control_box.h"
-#include "gmpv_playlist_widget.h"
 
 static void *GLAPIENTRY glMPGetNativeDisplay(const gchar *name);
 static void *get_proc_address(void *fn_ctx, const gchar *name);
@@ -161,13 +163,16 @@ static void mpv_prop_change_handler(GmpvMpv *mpv, mpv_event_property* prop)
 
 	if(g_strcmp0(prop->name, "pause") == 0)
 	{
-		gboolean idle;
+		gboolean idle_active;
 
 		mpv->state.paused = prop->data?*((int *)prop->data):TRUE;
 
-		mpv_get_property(mpv->mpv_ctx, "idle", MPV_FORMAT_FLAG, &idle);
+		mpv_get_property(	mpv->mpv_ctx,
+					"idle-active",
+					MPV_FORMAT_FLAG,
+					&idle_active );
 
-		if(idle && !mpv->state.paused)
+		if(idle_active && !mpv->state.paused)
 		{
 			gmpv_mpv_load(mpv, NULL, FALSE, TRUE);
 		}
@@ -710,200 +715,6 @@ GmpvMpv *gmpv_mpv_new(GmpvPlaylist *playlist, gint64 wid)
 						NULL ));
 }
 
-gint gmpv_mpv_command(GmpvMpv *mpv, const gchar **cmd)
-{
-	gint rc = MPV_ERROR_UNINITIALIZED;
-
-	if(mpv->mpv_ctx)
-	{
-		rc = mpv_command(mpv->mpv_ctx, cmd);
-	}
-
-	if(rc < 0)
-	{
-		gchar *cmd_str = g_strjoinv(" ", (gchar **)cmd);
-
-		g_warning(	"Failed to run mpv command \"%s\". Reason: %s.",
-				cmd_str,
-				mpv_error_string(rc) );
-
-		g_free(cmd_str);
-	}
-
-	return rc;
-}
-
-gint gmpv_mpv_command_string(GmpvMpv *mpv, const gchar *cmd)
-{
-	gint rc = MPV_ERROR_UNINITIALIZED;
-
-	if(mpv->mpv_ctx)
-	{
-		rc = mpv_command_string(mpv->mpv_ctx, cmd);
-	}
-
-	if(rc < 0)
-	{
-		g_warning(	"Failed to run mpv command string \"%s\". "
-				"Reason: %s.",
-				cmd,
-				mpv_error_string(rc) );
-	}
-
-	return rc;
-}
-
-gint gmpv_mpv_get_property(	GmpvMpv *mpv,
-				const gchar *name,
-				mpv_format format,
-				void *data )
-{
-	gint rc = MPV_ERROR_UNINITIALIZED;
-
-	if(mpv->mpv_ctx)
-	{
-		rc = mpv_get_property(mpv->mpv_ctx, name, format, data);
-	}
-
-	if(rc < 0)
-	{
-		g_info(	"Failed to retrieve property \"%s\" "
-			"using mpv format %d. Reason: %s.",
-			name,
-			format,
-			mpv_error_string(rc) );
-	}
-
-	return rc;
-}
-
-gchar *gmpv_mpv_get_property_string(GmpvMpv *mpv, const gchar *name)
-{
-	gchar *value = NULL;
-
-	if(mpv->mpv_ctx)
-	{
-		value = mpv_get_property_string(mpv->mpv_ctx, name);
-	}
-
-	if(!value)
-	{
-		g_info("Failed to retrieve property \"%s\" as string.", name);
-	}
-
-	return value;
-}
-
-gboolean gmpv_mpv_get_property_flag(GmpvMpv *mpv, const gchar *name)
-{
-	gboolean value = FALSE;
-	gint rc = MPV_ERROR_UNINITIALIZED;
-
-	if(mpv->mpv_ctx)
-	{
-		rc =	mpv_get_property
-			(mpv->mpv_ctx, name, MPV_FORMAT_FLAG, &value);
-	}
-
-	if(rc < 0)
-	{
-		g_info(	"Failed to retrieve property \"%s\" as flag. "
-			"Reason: %s.",
-			name,
-			mpv_error_string(rc) );
-	}
-
-	return value;
-}
-
-gint gmpv_mpv_set_property(	GmpvMpv *mpv,
-				const gchar *name,
-				mpv_format format,
-				void *data )
-{
-	gint rc = MPV_ERROR_UNINITIALIZED;
-
-	if(mpv->mpv_ctx)
-	{
-		rc = mpv_set_property(mpv->mpv_ctx, name, format, data);
-	}
-
-	if(rc < 0)
-	{
-		g_info(	"Failed to set property \"%s\" using mpv format %d. "
-			"Reason: %s.",
-			name,
-			format,
-			mpv_error_string(rc) );
-	}
-
-	return rc;
-}
-
-gint gmpv_mpv_set_property_string(	GmpvMpv *mpv,
-					const gchar *name,
-					const char *data )
-{
-	gint rc = MPV_ERROR_UNINITIALIZED;
-
-	if(mpv->mpv_ctx)
-	{
-		rc = mpv_set_property_string(mpv->mpv_ctx, name, data);
-	}
-
-	if(rc < 0)
-	{
-		g_info(	"Failed to set property \"%s\" as string. Reason: %s.",
-			name,
-			mpv_error_string(rc) );
-	}
-
-	return rc;
-}
-
-gint gmpv_mpv_set_property_flag(	GmpvMpv *mpv,
-					const gchar *name,
-					gboolean value )
-{
-	gint rc = MPV_ERROR_UNINITIALIZED;
-
-	if(mpv->mpv_ctx)
-	{
-		rc =	mpv_set_property
-			(mpv->mpv_ctx, name, MPV_FORMAT_FLAG, &value);
-	}
-
-	if(rc < 0)
-	{
-		g_info(	"Failed to set property \"%s\" as flag. Reason: %s.",
-			name,
-			mpv_error_string(rc) );
-	}
-
-	return rc;
-}
-
-void gmpv_mpv_set_event_callback(	GmpvMpv *mpv,
-					void (*func)(mpv_event *, void *),
-					void *data )
-{
-	mpv->event_callback = func;
-	mpv->event_callback_data = data;
-}
-
-void gmpv_mpv_set_opengl_cb_callback(	GmpvMpv *mpv,
-					mpv_opengl_cb_update_fn func,
-					void *data )
-{
-	mpv->opengl_cb_callback = func;
-	mpv->opengl_cb_callback_data = data;
-
-	if(mpv->opengl_ctx)
-	{
-		mpv_opengl_cb_set_update_callback(mpv->opengl_ctx, func, data);
-	}
-}
-
 void mpv_check_error(int status)
 {
 	void *array[10];
@@ -1056,7 +867,7 @@ void gmpv_mpv_initialize(GmpvMpv *mpv)
 	mpv_observe_property(mpv->mpv_ctx, 0, "core-idle", MPV_FORMAT_FLAG);
 	mpv_observe_property(mpv->mpv_ctx, 0, "fullscreen", MPV_FORMAT_FLAG);
 	mpv_observe_property(mpv->mpv_ctx, 0, "pause", MPV_FORMAT_FLAG);
-	mpv_observe_property(mpv->mpv_ctx, 0, "length", MPV_FORMAT_DOUBLE);
+	mpv_observe_property(mpv->mpv_ctx, 0, "duration", MPV_FORMAT_DOUBLE);
 	mpv_observe_property(mpv->mpv_ctx, 0, "media-title", MPV_FORMAT_STRING);
 	mpv_observe_property(mpv->mpv_ctx, 0, "playlist-pos", MPV_FORMAT_INT64);
 	mpv_observe_property(mpv->mpv_ctx, 0, "track-list", MPV_FORMAT_NODE);
@@ -1357,24 +1168,28 @@ void gmpv_mpv_load_list(	GmpvMpv *mpv,
 	for(gint i = 0; uri_list[i]; i++)
 	{
 		const gchar *ext = strrchr(uri_list[i], '.');
-		gint j;
+		gboolean subtitle = FALSE;
 
 		/* Only start checking the extension if there is at
 		 * least one character after the dot.
 		 */
 		if(ext && ++ext)
 		{
-			for(	j = 0;
-				sub_exts[j] &&
-				g_strcmp0(ext, sub_exts[j]) != 0;
-				j++ );
+			const gchar *const *cur = sub_exts;
+
+			/* Check if the file extension matches one of the
+			 * supported subtitle formats.
+			 */
+			while(*cur && g_strcmp0(ext, *(cur++)) != 0);
+
+			subtitle = !!(*cur);
 		}
 
 		/* Only attempt to load file as subtitle if there
 		 * already is a file loaded. Try to load the file as a
 		 * media file otherwise.
 		 */
-		if(ext && sub_exts[j] && gmpv_mpv_get_state(mpv)->loaded)
+		if(ext && subtitle && gmpv_mpv_get_state(mpv)->loaded)
 		{
 			const gchar *cmd[] = {"sub-add", NULL, NULL};
 			gchar *path;
@@ -1382,11 +1197,10 @@ void gmpv_mpv_load_list(	GmpvMpv *mpv,
 			/* Convert to path if possible to get rid of
 			 * percent encoding.
 			 */
-			path =	g_filename_from_uri
-				(uri_list[i], NULL, NULL);
-
+			path = g_filename_from_uri(uri_list[i], NULL, NULL);
 			cmd[1] = path?:uri_list[i];
 
+			g_debug("Loading external subtitle: %s", cmd[1]);
 			gmpv_mpv_command(mpv, cmd);
 
 			g_free(path);

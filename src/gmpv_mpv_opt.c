@@ -17,12 +17,17 @@
  * along with GNOME MPV.  If not, see <http://www.gnu.org/licenses/>.
  */
 
+#include <gdk/gdk.h>
+#include <glib.h>
+#include <glib-object.h>
 #include <string.h>
 #include <mpv/client.h>
 
 #include "gmpv_mpv_opt.h"
 #include "gmpv_mpv.h"
 #include "gmpv_mpv_private.h"
+#include "gmpv_mpv_wrapper.h"
+#include "gmpv_geometry.h"
 #include "gmpv_def.h"
 
 static gboolean parse_geom_token(const gchar **iter, GValue *value);
@@ -42,6 +47,7 @@ static gboolean parse_geom_token(const gchar **iter, GValue *value)
 {
 	gchar *end = NULL;
 	gint64 token_value = g_ascii_strtoll(*iter, &end, 10);
+	gboolean rc = FALSE;
 
 	if(end)
 	{
@@ -58,10 +64,11 @@ static gboolean parse_geom_token(const gchar **iter, GValue *value)
 			g_value_set_int64(value, token_value);
 		}
 
+		rc = !!end && *iter != end;
 		*iter = end;
 	}
 
-	return !!end;
+	return rc;
 }
 
 static gboolean parse_dim_string(const gchar *geom_str, gint64 dim[2])
