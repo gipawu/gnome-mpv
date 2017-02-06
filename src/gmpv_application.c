@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2016 gnome-mpv
+ * Copyright (c) 2016-2017 gnome-mpv
  *
  * This file is part of GNOME MPV.
  *
@@ -49,7 +49,6 @@ struct _GmpvApplication
 	gchar **files;
 	guint inhibit_cookie;
 	gint64 target_playlist_pos;
-	GSettings *config;
 	GmpvMainWindow *gui;
 	GtkWidget *fs_control;
 	GmpvPlaylist *playlist_store;
@@ -93,12 +92,16 @@ static void playlist_row_reodered_handler(	GmpvPlaylistWidget *playlist,
 						gpointer data );
 static GmpvTrack *parse_track_list(mpv_node_list *node);
 static void update_track_list(GmpvApplication *app, mpv_node* track_list);
-static gchar *strnjoinv(	const gchar *separator,
-				const gchar **str_array,
-				gsize count );
 static gboolean process_action(gpointer data);
-static void mpv_prop_change_handler(mpv_event_property *prop, gpointer data);
-static void mpv_event_handler(mpv_event *event, gpointer data);
+static void mpv_prop_change_handler(	GmpvMpv* mpv,
+					const gchar *prop,
+					gpointer value,
+					gpointer data );
+static void load_handler(GmpvMpv *mpv, gpointer data);
+static void idle_handler(GmpvMpv *mpv, gpointer data);
+static void message_handler(GmpvMpv *mpv, const gchar *msg, gpointer data);
+static void video_reconfig_handler(GmpvMpv *mpv, gpointer data);
+static void shutdown_handler(GmpvMpv *mpv, gpointer data);
 static void mpv_error_handler(GmpvMpv *mpv, const gchar *err, gpointer data);
 static gboolean shutdown_signal_handler(gpointer data);
 static void drag_data_handler(	GtkWidget *widget,
@@ -236,11 +239,13 @@ static void startup_handler(GApplication *gapp, gpointer data)
 {
 	GmpvApplication *app = data;
 	GmpvControlBox *control_box;
+	GSettings *settings = g_settings_new(CONFIG_ROOT);
 	const gchar *style = ".gmpv-vid-area{background-color: black}";
 	GtkCssProvider *style_provider;
 	gboolean css_loaded;
 	gboolean csd_enable;
 	gboolean dark_theme_enable;
+	gboolean always_floating;
 	gint64 wid;
 	gchar *mpvinput;
 
@@ -254,12 +259,22 @@ static void startup_handler(GApplication *gapp, gpointer data)
 
 	g_info("Starting GNOME MPV " VERSION);
 
+	csd_enable = g_settings_get_boolean
+				(settings, "csd-enable");
+	dark_theme_enable = g_settings_get_boolean
+				(settings, "dark-theme-enable");
+	always_floating = g_settings_get_boolean
+				(settings, "always-use-floating-controls");
+	mpvinput = g_settings_get_string
+				(settings, "mpv-input-config-file");
+
 	app->files = NULL;
 	app->inhibit_cookie = 0;
 	app->target_playlist_pos = -1;
-	app->config = g_settings_new(CONFIG_ROOT);
 	app->playlist_store = gmpv_playlist_new();
-	app->gui = GMPV_MAIN_WINDOW(gmpv_main_window_new(app, app->playlist_store));
+	app->gui = GMPV_MAIN_WINDOW(gmpv_main_window_new(	app,
+								app->playlist_store,
+								always_floating));
 	app->fs_control = NULL;
 
 	control_box = gmpv_main_window_get_control_box(app->gui);
@@ -278,13 +293,6 @@ static void startup_handler(GApplication *gapp, gpointer data)
 			GTK_STYLE_PROVIDER_PRIORITY_APPLICATION );
 
 	g_object_unref(style_provider);
-
-	csd_enable = g_settings_get_boolean
-				(app->config, "csd-enable");
-	dark_theme_enable = g_settings_get_boolean
-				(app->config, "dark-theme-enable");
-	mpvinput = g_settings_get_string
-				(app->config, "mpv-input-config-file");
 
 	if(csd_enable)
 	{
@@ -417,8 +425,6 @@ static gboolean draw_handler(GtkWidget *widget, cairo_t *cr, gpointer data)
 		(app->gui, gmpv_mpv_get_geometry(app->mpv));
 	gmpv_mpv_set_opengl_cb_callback
 		(app->mpv, opengl_cb_update_callback, app);
-	gmpv_mpv_set_event_callback
-		(app->mpv, mpv_event_handler, app);
 
 	if(!app->files)
 	{
@@ -621,23 +627,6 @@ static void update_track_list(GmpvApplication *app, mpv_node* track_list)
 	g_slist_free_full(sub_list, (GDestroyNotify)gmpv_track_free);
 }
 
-static gchar *strnjoinv(	const gchar *separator,
-				const gchar **str_array,
-				gsize count )
-{
-	gsize args_size = ((gsize)count+1)*sizeof(gchar *);
-	gchar **args = g_malloc(args_size);
-	gchar *result;
-
-	memcpy(args, str_array, args_size-sizeof(gchar *));
-	args[count] = NULL;
-	result = g_strjoinv(separator, args);
-
-	g_free(args);
-
-	return result;
-}
-
 static gboolean process_action(gpointer data)
 {
 	GmpvApplication *app = data;
@@ -650,171 +639,156 @@ static gboolean process_action(gpointer data)
 	return FALSE;
 }
 
-static void mpv_prop_change_handler(mpv_event_property *prop, gpointer data)
+static void mpv_prop_change_handler(	GmpvMpv *mpv,
+					const gchar *prop,
+					gpointer value,
+					gpointer data )
 {
 	GmpvApplication *app = data;
-	GmpvMpv *mpv = app->mpv;
 	GmpvControlBox *control_box = gmpv_main_window_get_control_box(app->gui);
 	const GmpvMpvState *state = gmpv_mpv_get_state(mpv);
 
-	if(g_strcmp0(prop->name, "pause") == 0)
+	if(state->loaded)
 	{
-		gboolean paused = prop->data?*((gboolean *)prop->data):TRUE;
+		if(g_strcmp0(prop, "pause") == 0)
+		{
+			gboolean paused = value?*((gboolean *)value):TRUE;
 
-		gmpv_control_box_set_playing_state(control_box, !paused);
-	}
-	else if(g_strcmp0(prop->name, "core-idle") == 0)
-	{
-		gboolean idle = prop->data?*((gboolean *)prop->data):TRUE;
+			gmpv_control_box_set_playing_state(control_box, !paused);
+		}
+		else if(g_strcmp0(prop, "core-idle") == 0)
+		{
+			gboolean idle = value?*((gboolean *)value):TRUE;
 
-		set_inhibit_idle(app, !idle);
-	}
-	else if(g_strcmp0(prop->name, "track-list") == 0 && prop->data)
-	{
-		update_track_list(app, prop->data);
-	}
-	else if(g_strcmp0(prop->name, "volume") == 0
-	&& (state->init_load || state->loaded))
-	{
-		gdouble volume = prop->data?*((double *)prop->data)/100.0:0;
+			set_inhibit_idle(app, !idle);
+		}
+		else if(g_strcmp0(prop, "track-list") == 0 && value)
+		{
+			update_track_list(app, value);
+		}
+		else if(g_strcmp0(prop, "volume") == 0
+		&& (state->init_load || state->loaded))
+		{
+			gdouble volume = value?*((double *)value)/100.0:0;
 
-		gmpv_control_box_set_volume(control_box, volume);
-	}
-	else if(g_strcmp0(prop->name, "duration") == 0 && prop->data)
-	{
-		gdouble duration = *((gdouble *) prop->data);
+			gmpv_control_box_set_volume(control_box, volume);
+		}
+		else if(g_strcmp0(prop, "duration") == 0 && value)
+		{
+			gdouble duration = *((gdouble *) value);
 
-		gmpv_control_box_set_seek_bar_duration
-			(control_box, (gint)duration);
-	}
-	else if(g_strcmp0(prop->name, "media-title") == 0 && prop->data)
-	{
-		const gchar *title = *((const gchar **)prop->data);
+			gmpv_control_box_set_seek_bar_duration
+				(control_box, (gint)duration);
+		}
+		else if(g_strcmp0(prop, "media-title") == 0 && value)
+		{
+			const gchar *title = *((const gchar **)value);
 
-		gtk_window_set_title(GTK_WINDOW(app->gui), title);
-	}
-	else if(g_strcmp0(prop->name, "playlist-pos") == 0 && prop->data)
-	{
-		GmpvPlaylist *playlist = gmpv_mpv_get_playlist(mpv);
-		gint64 pos = *((gint64 *)prop->data);
+			gtk_window_set_title(GTK_WINDOW(app->gui), title);
+		}
+		else if(g_strcmp0(prop, "playlist-pos") == 0 && value)
+		{
+			GmpvPlaylist *playlist = gmpv_mpv_get_playlist(mpv);
+			gint64 pos = *((gint64 *)value);
 
-		gmpv_playlist_set_indicator_pos(playlist, (gint)pos);
-	}
-	else if(g_strcmp0(prop->name, "chapters") == 0 && prop->data)
-	{
-		gint64 count = *((gint64 *) prop->data);
+			gmpv_playlist_set_indicator_pos(playlist, (gint)pos);
+		}
+		else if(g_strcmp0(prop, "chapters") == 0 && value)
+		{
+			gint64 count = *((gint64 *) value);
 
-		gmpv_control_box_set_chapter_enabled(control_box, (count > 1));
-	}
-	else if(g_strcmp0(prop->name, "fullscreen") == 0 && prop->data)
-	{
-		gboolean fullscreen = *((gboolean *)prop->data);
+			gmpv_control_box_set_chapter_enabled
+				(control_box, (count > 1));
+		}
+		else if(g_strcmp0(prop, "fullscreen") == 0 && value)
+		{
+			gboolean fullscreen = *((gboolean *)value);
 
-		gmpv_main_window_set_fullscreen(app->gui, fullscreen);
+			gmpv_main_window_set_fullscreen(app->gui, fullscreen);
+		}
 	}
 }
 
-static void mpv_event_handler(mpv_event *event, gpointer data)
+static void load_handler(GmpvMpv *mpv, gpointer data)
 {
 	GmpvApplication *app = data;
-	GmpvMpv *mpv = app->mpv;
 	const GmpvMpvState *state = gmpv_mpv_get_state(mpv);
+	GmpvControlBox *control_box;
+	GmpvPlaylist *playlist;
+	gchar *title;
+	gint64 pos = -1;
+	gdouble duration = 0;
 
-	if(event->event_id == MPV_EVENT_VIDEO_RECONFIG)
+	control_box = gmpv_main_window_get_control_box(app->gui);
+	playlist = gmpv_mpv_get_playlist(mpv);
+
+	if(app->target_playlist_pos != -1)
 	{
-		gdouble autofit_ratio = gmpv_mpv_get_autofit_ratio(app->mpv);
+		gmpv_mpv_set_property
+			(	mpv,
+				"playlist-pos",
+				MPV_FORMAT_INT64,
+				&app->target_playlist_pos );
 
-		if(state->new_file && autofit_ratio > 0)
-		{
-			resize_window_to_fit(app, autofit_ratio);
-		}
+		app->target_playlist_pos = -1;
 	}
-	else if(event->event_id == MPV_EVENT_PROPERTY_CHANGE)
+
+	gmpv_mpv_get_property
+		(mpv, "playlist-pos", MPV_FORMAT_INT64, &pos);
+	gmpv_mpv_get_property
+		(mpv, "duration", MPV_FORMAT_DOUBLE, &duration);
+
+	title = gmpv_mpv_get_property_string(mpv, "media-title");
+
+	gmpv_control_box_set_enabled(control_box, TRUE);
+	gmpv_control_box_set_playing_state(control_box, !state->paused);
+	gmpv_playlist_set_indicator_pos(playlist, (gint)pos);
+	gmpv_control_box_set_seek_bar_duration(control_box, (gint)duration);
+	gtk_window_set_title(GTK_WINDOW(app->gui), title);
+
+	gmpv_mpv_free(title);
+}
+
+static void idle_handler(GmpvMpv *mpv, gpointer data)
+{
+	GmpvApplication *app = data;
+
+	gmpv_main_window_reset(app->gui);
+	set_inhibit_idle(app, FALSE);
+}
+
+static void message_handler(GmpvMpv *mpv, const gchar *msg, gpointer data)
+{
+	GmpvApplication *app = data;
+	const char prefix[] = "gmpv-action";
+
+	if(strncmp(msg, prefix, sizeof(prefix)-1) == 0)
 	{
-		if(state->loaded)
-		{
-			mpv_prop_change_handler(event->data, data);
-		}
+		g_queue_push_head(	app->action_queue,
+					g_strdup(msg+sizeof(prefix)) );
+		g_idle_add(process_action, app);
 	}
-	else if(event->event_id == MPV_EVENT_FILE_LOADED)
+	else
 	{
-		GmpvControlBox *control_box;
-		GmpvPlaylist *playlist;
-		gchar *title;
-		gint64 pos = -1;
-		gdouble duration = 0;
-
-		control_box = gmpv_main_window_get_control_box(app->gui);
-		playlist = gmpv_mpv_get_playlist(mpv);
-
-		if(app->target_playlist_pos != -1)
-		{
-			gmpv_mpv_set_property
-				(	mpv,
-					"playlist-pos",
-					MPV_FORMAT_INT64,
-					&app->target_playlist_pos );
-
-			app->target_playlist_pos = -1;
-		}
-
-		gmpv_mpv_get_property
-			(mpv, "playlist-pos", MPV_FORMAT_INT64, &pos);
-		gmpv_mpv_get_property
-			(mpv, "duration", MPV_FORMAT_DOUBLE, &duration);
-
-		title = gmpv_mpv_get_property_string(mpv, "media-title");
-
-		gmpv_control_box_set_enabled(control_box, TRUE);
-		gmpv_control_box_set_playing_state(control_box, !state->paused);
-		gmpv_playlist_set_indicator_pos(playlist, (gint)pos);
-		gmpv_control_box_set_seek_bar_duration(control_box, (gint)duration);
-		gtk_window_set_title(GTK_WINDOW(app->gui), title);
-
-		gmpv_mpv_free(title);
+		g_warning("Invalid client message received: %s", msg);
 	}
-	else if(event->event_id == MPV_EVENT_CLIENT_MESSAGE)
+}
+
+static void video_reconfig_handler(GmpvMpv *mpv, gpointer data)
+{
+	GmpvApplication *app = data;
+	const GmpvMpvState *state = gmpv_mpv_get_state(mpv);
+	gdouble autofit_ratio = gmpv_mpv_get_autofit_ratio(app->mpv);
+
+	if(state->new_file && autofit_ratio > 0)
 	{
-		mpv_event_client_message *event_cmsg = event->data;
-
-		if(event_cmsg->num_args >= 2
-		&& g_strcmp0(event_cmsg->args[0], "gmpv-action") == 0)
-		{
-			gchar *action_str;
-
-			action_str = strnjoinv(	" ",
-						event_cmsg->args+1,
-						(gsize)event_cmsg->num_args-1 );
-
-			g_queue_push_head(app->action_queue, action_str);
-			g_idle_add(process_action, app);
-		}
-		else
-		{
-			gchar *full_str;
-
-			full_str = strnjoinv(	" ",
-						event_cmsg->args,
-						(gsize)event_cmsg->num_args);
-
-			g_warning(	"Invalid client message received: %s",
-					full_str );
-
-			g_free(full_str);
-		}
+		resize_window_to_fit(app, autofit_ratio);
 	}
-	else if(event->event_id == MPV_EVENT_IDLE)
-	{
-		if(!state->init_load && !state->loaded)
-		{
-			gmpv_main_window_reset(app->gui);
-			set_inhibit_idle(app, FALSE);
-		}
-	}
-	else if(event->event_id == MPV_EVENT_SHUTDOWN)
-	{
-		gmpv_application_quit(app);
-	}
+}
+
+static void shutdown_handler(GmpvMpv *mpv, gpointer data)
+{
+	gmpv_application_quit(GMPV_APPLICATION(data));
 }
 
 static void mpv_error_handler(GmpvMpv *mpv, const gchar *err, gpointer data)
@@ -1044,6 +1018,30 @@ static void connect_signals(GmpvApplication *app)
 	g_signal_connect(	playlist,
 				"row-reordered",
 				G_CALLBACK(playlist_row_reodered_handler),
+				app );
+	g_signal_connect(	app->mpv,
+				"load",
+				G_CALLBACK(load_handler),
+				app );
+	g_signal_connect(	app->mpv,
+				"idle",
+				G_CALLBACK(idle_handler),
+				app );
+	g_signal_connect(	app->mpv,
+				"message",
+				G_CALLBACK(message_handler),
+				app );
+	g_signal_connect(	app->mpv,
+				"video-reconfig",
+				G_CALLBACK(video_reconfig_handler),
+				app );
+	g_signal_connect(	app->mpv,
+				"shutdown",
+				G_CALLBACK(shutdown_handler),
+				app );
+	g_signal_connect(	app->mpv,
+				"mpv-prop-change",
+				G_CALLBACK(mpv_prop_change_handler),
 				app );
 	g_signal_connect(	app->mpv,
 				"mpv-error",

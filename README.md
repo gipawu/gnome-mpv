@@ -38,7 +38,7 @@ capabilities.
 - Frugalware: http://www4.frugalware.org/pub/linux/distributions/frugalware/frugalware-current/source/xapps-extra/gnome-mpv/
 - OpenSUSE: https://build.opensuse.org/package/show/home:mermoldy:multimedia/gnome-mpv
 - Gentoo: http://gpo.zugaina.org/media-video/gnome-mpv
-- Solus: https://packages.solus-project.com/v1/g/gnome-mpv/
+- Solus: https://packages.solus-project.com/shannon/g/gnome-mpv/
 - Ubuntu: https://launchpad.net/~xuzhen666/+archive/ubuntu/gnome-mpv
 
 ### Guix
@@ -137,6 +137,11 @@ translations. You can find GNOME MPV's page
 start translating, follow the instructions
 [here](http://docs.zanata.org/en/release/user-guide/translator-guide/). If you'd
 like to add a new language, open an issue on GitHub.
+
+While translating, you will find the string `translator-credits`. You should not
+translate this string. Instead, you should put your name, and optionally your
+email address, in the following format: `FirstName LastName <Email Address>`.
+Your name will then appear in the About dialog when your translation is active.
 
 ## License
 
