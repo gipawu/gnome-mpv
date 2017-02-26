@@ -29,6 +29,5 @@ EXTRA_DIST =	$(appstream_in_files) $(desktop_in_files) \
 		io.github.GnomeMpv.gschema.xml \
 		gmpv_mpris_gdbus.xml gmpv_marshal.lst \
 		meson.build
->>>>>>> upstream/master
 
 DISTCLEANFILES = $(appstream_XML) $(desktop_DATA)
