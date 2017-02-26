@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2014-2016 gnome-mpv
+ * Copyright (c) 2014-2017 gnome-mpv
  *
  * This file is part of GNOME MPV.
  *
@@ -25,6 +25,7 @@
 #define CONFIG_DIR "gnome-mpv"
 #define CONFIG_ROOT APP_ID
 #define CONFIG_WIN_STATE APP_ID".window-state"
+#define ACTION_PREFIX "gmpv-action"
 #define DEFAULT_LOG_LEVEL MPV_LOG_LEVEL_ERROR
 #define MPRIS_TRACK_ID_PREFIX "/org/gnome_mpv/GmpvTrack/"
 #define MPRIS_BUS_NAME "org.mpris.MediaPlayer2.gnome-mpv"
@@ -108,6 +109,10 @@
 		"Alt+1 script-message gmpv-action set-video-size(1.0)",\
 		"Alt+2 script-message gmpv-action set-video-size(2.0)",\
 		"MOUSE_BTN0_DBL script-message gmpv-action toggle-fullscreen",\
+		"MOUSE_BTN3 add volume 2",\
+		"MOUSE_BTN4 add volume -2",\
+		"MOUSE_BTN5 no-osd seek -10",\
+		"MOUSE_BTN6 no-osd seek 10",\
 		NULL }
 
 #define KEYSTRING_MAP	{	"<", "less",\

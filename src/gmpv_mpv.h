@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2014, 2016 gnome-mpv
+ * Copyright (c) 2014, 2016-2017 gnome-mpv
  *
  * This file is part of GNOME MPV.
  *
@@ -27,6 +27,7 @@
 
 #include "gmpv_playlist.h"
 #include "gmpv_geometry.h"
+#include "gmpv_track.h"
 
 G_BEGIN_DECLS
 
@@ -52,18 +53,20 @@ gdouble gmpv_mpv_get_autofit_ratio(GmpvMpv *mpv);
 GmpvPlaylist *gmpv_mpv_get_playlist(GmpvMpv *mpv);
 mpv_handle *gmpv_mpv_get_mpv_handle(GmpvMpv *mpv);
 mpv_opengl_cb_context *gmpv_mpv_get_opengl_cb_context(GmpvMpv *mpv);
+GSList *gmpv_mpv_get_track_list(GmpvMpv *mpv);
 void gmpv_mpv_initialize(GmpvMpv *mpv);
 void gmpv_mpv_init_gl(GmpvMpv *mpv);
 void gmpv_mpv_reset(GmpvMpv *mpv);
 void gmpv_mpv_quit(GmpvMpv *mpv);
+void gmpv_mpv_load_track(GmpvMpv *mpv, const gchar *uri, TrackType type);
+void gmpv_mpv_load_file(	GmpvMpv *mpv,
+				const gchar *uri,
+				gboolean append,
+				gboolean update );
 void gmpv_mpv_load(	GmpvMpv *mpv,
 			const gchar *uri,
 			gboolean append,
 			gboolean update );
-void gmpv_mpv_load_list(	GmpvMpv *mpv,
-				const gchar **uri_list,
-				gboolean append,
-				gboolean update );
 void gmpv_mpv_free(gpointer data);
 
 G_END_DECLS

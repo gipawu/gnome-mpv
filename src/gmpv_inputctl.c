@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2016 gnome-mpv
+ * Copyright (c) 2016-2017 gnome-mpv
  *
  * This file is part of GNOME MPV.
  *
@@ -23,6 +23,7 @@
 #include <gtk/gtk.h>
 #include <string.h>
 
+#include "gmpv_controller_private.h"
 #include "gmpv_inputctl.h"
 #include "gmpv_mpv.h"
 #include "gmpv_mpv_wrapper.h"
@@ -72,7 +73,8 @@ static gchar *get_full_keystr(guint keyval, guint state)
 		g_strlcat(modstr, "Alt+", max_modstr_len);
 	}
 
-	if((state&GDK_META_MASK) != 0 || (state&GDK_SUPER_MASK) != 0)
+	/* Super is Meta in mpv */
+	if((state&GDK_SUPER_MASK) != 0)
 	{
 		g_strlcat(modstr, "Meta+", max_modstr_len);
 	}
@@ -98,21 +100,14 @@ static gboolean key_press_handler(	GtkWidget *widget,
 					GdkEvent *event,
 					gpointer data )
 {
-	const gchar *cmd[] = {"keydown", NULL, NULL};
-	GmpvApplication *app = data;
+	GmpvController *controller = data;
 	guint keyval = ((GdkEventKey*)event)->keyval;
 	guint state = ((GdkEventKey*)event)->state;
-	gchar *keystr = NULL;
-
-	cmd[1] = keystr = get_full_keystr(keyval, state);
+	gchar *keystr = get_full_keystr(keyval, state);
 
 	if(keystr)
 	{
-		GmpvMpv *mpv = gmpv_application_get_mpv(app);
-
-		g_debug("Sent '%s' key down to mpv", keystr);
-		gmpv_mpv_command(mpv, cmd);
-
+		gmpv_model_key_down(controller->model, keystr);
 		g_free(keystr);
 	}
 
@@ -123,21 +118,14 @@ static gboolean key_release_handler(	GtkWidget *widget,
 					GdkEvent *event,
 					gpointer data )
 {
-	GmpvApplication *app = data;
+	GmpvController *controller = data;
 	guint keyval = ((GdkEventKey*)event)->keyval;
 	guint state = ((GdkEventKey*)event)->state;
-	gchar *keystr = NULL;
-	const gchar *cmd[] = {"keyup", NULL, NULL};
-
-	cmd[1] = keystr = get_full_keystr(keyval, state);
+	gchar *keystr = get_full_keystr(keyval, state);
 
 	if(keystr)
 	{
-		GmpvMpv *mpv = gmpv_application_get_mpv(app);
-
-		g_debug("Sent '%s' key up to mpv", keystr);
-		gmpv_mpv_command(mpv, cmd);
-
+		gmpv_model_key_up(controller->model, keystr);
 		g_free(keystr);
 	}
 
@@ -154,20 +142,16 @@ static gboolean mouse_button_handler(	GtkWidget *widget,
 	|| btn_event->type == GDK_BUTTON_RELEASE
 	|| btn_event->type == GDK_SCROLL)
 	{
-		GmpvApplication *app = data;
-		GmpvMpv *mpv = gmpv_application_get_mpv(app);
+		GmpvController *controller = data;
 		gchar *btn_str =	g_strdup_printf
 					("MOUSE_BTN%u", btn_event->button-1);
-		const gchar *type_str =	(btn_event->type == GDK_SCROLL)?
-					"keypress":
-					(btn_event->type == GDK_BUTTON_PRESS)?
-					"keydown":"keyup";
-		const gchar *key_cmd[] = {type_str, btn_str, NULL};
+		void (*func)(GmpvModel *, const gchar *)
+			=	(btn_event->type == GDK_SCROLL)?
+				gmpv_model_key_press:
+				(btn_event->type == GDK_BUTTON_PRESS)?
+				gmpv_model_key_down:gmpv_model_key_up;
 
-		g_debug(	"Sent %s event for button %s to mpv",
-				type_str, btn_str );
-
-		gmpv_mpv_command(mpv, key_cmd);
+		func(controller->model, btn_str);
 
 		g_free(btn_str);
 	}
@@ -179,17 +163,12 @@ static gboolean mouse_move_handler(	GtkWidget *widget,
 					GdkEvent *event,
 					gpointer data )
 {
-	GmpvApplication *app = data;
-	GmpvMpv *mpv = gmpv_application_get_mpv(app);
+	GmpvController *controller = data;
 	GdkEventMotion *motion_event = (GdkEventMotion *)event;
-	gchar *x_str = g_strdup_printf("%d", (gint)motion_event->x);
-	gchar *y_str = g_strdup_printf("%d", (gint)motion_event->y);
-	const gchar *cmd[] = {"mouse", x_str, y_str, NULL};
 
-	gmpv_mpv_command(mpv, cmd);
-
-	g_free(x_str);
-	g_free(y_str);
+	gmpv_model_mouse(	controller->model,
+				(gint)motion_event->x,
+				(gint)motion_event->y );
 
 	return FALSE;
 }
@@ -262,33 +241,30 @@ static gboolean scroll_handler(	GtkWidget *widget,
 	return TRUE;
 }
 
-void gmpv_inputctl_connect_signals(GmpvApplication *app)
+void gmpv_inputctl_connect_signals(GmpvController *controller)
 {
-	GmpvMainWindow *wnd = gmpv_application_get_main_window(app);
-	GmpvVideoArea *video_area = gmpv_main_window_get_video_area(wnd);
-
-	g_signal_connect(	wnd,
+	g_signal_connect(	controller->view,
 				"key-press-event",
 				G_CALLBACK(key_press_handler),
-				app );
-	g_signal_connect(	wnd,
+				controller );
+	g_signal_connect(	controller->view,
 				"key-release-event",
 				G_CALLBACK(key_release_handler),
-				app );
-	g_signal_connect(	video_area,
+				controller );
+	g_signal_connect(	controller->view,
 				"button-press-event",
 				G_CALLBACK(mouse_button_handler),
-				app );
-	g_signal_connect(	video_area,
+				controller );
+	g_signal_connect(	controller->view,
 				"button-release-event",
 				G_CALLBACK(mouse_button_handler),
-				app );
-	g_signal_connect(	video_area,
+				controller );
+	g_signal_connect(	controller->view,
 				"motion-notify-event",
 				G_CALLBACK(mouse_move_handler),
-				app );
-	g_signal_connect(	video_area,
+				controller );
+	g_signal_connect(	controller->view,
 				"scroll-event",
 				G_CALLBACK(scroll_handler),
-				app );
+				controller );
 }

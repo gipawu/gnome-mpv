@@ -27,7 +27,6 @@
 #include <gdk/gdk.h>
 #include <stdlib.h>
 #include <string.h>
-#include <execinfo.h>
 
 #include <epoxy/gl.h>
 #ifdef GDK_WINDOWING_X11
@@ -62,7 +61,9 @@ static void get_inst_property(	GObject *object,
 				guint property_id,
 				GValue *value,
 				GParamSpec *pspec );
+static void load_from_playlist(GmpvMpv *mpv);
 static void wakeup_callback(void *data);
+static GmpvTrack *parse_track_entry(mpv_node_list *node);
 static void mpv_prop_change_handler(GmpvMpv *mpv, mpv_event_property* prop);
 static gboolean mpv_event_handler(gpointer data);
 static void update_playlist(GmpvMpv *mpv);
@@ -153,9 +154,86 @@ static void get_inst_property(	GObject *object,
 	}
 }
 
+static void load_from_playlist(GmpvMpv *mpv)
+{
+	GtkListStore *playlist_store = gmpv_playlist_get_store(mpv->playlist);
+	gboolean append = FALSE;
+	GtkTreeIter iter;
+	gboolean rc;
+
+	if(!mpv->state.init_load)
+	{
+		gmpv_mpv_set_property_flag(mpv, "pause", FALSE);
+	}
+
+	rc = gtk_tree_model_get_iter_first
+		(GTK_TREE_MODEL(playlist_store), &iter);
+
+	while(rc)
+	{
+		gchar *uri;
+
+		gtk_tree_model_get(	GTK_TREE_MODEL(playlist_store),
+					&iter,
+					PLAYLIST_URI_COLUMN,
+					&uri,
+					-1 );
+
+		/* append = FALSE only on first iteration */
+		gmpv_mpv_load(mpv, uri, append, FALSE);
+
+		append = TRUE;
+
+		rc = gtk_tree_model_iter_next
+			(GTK_TREE_MODEL(playlist_store), &iter);
+
+		g_free(uri);
+	}
+}
+
 static void wakeup_callback(void *data)
 {
 	g_idle_add((GSourceFunc)mpv_event_handler, data);
+}
+
+static GmpvTrack *parse_track_entry(mpv_node_list *node)
+{
+	GmpvTrack *entry = gmpv_track_new();
+
+	for(gint i = 0; i < node->num; i++)
+	{
+		if(g_strcmp0(node->keys[i], "type") == 0)
+		{
+			const gchar *type = node->values[i].u.string;
+
+			if(g_strcmp0(type, "audio") == 0)
+			{
+				entry->type = TRACK_TYPE_AUDIO;
+			}
+			else if(g_strcmp0(type, "video") == 0)
+			{
+				entry->type = TRACK_TYPE_VIDEO;
+			}
+			else if(g_strcmp0(type, "sub") == 0)
+			{
+				entry->type = TRACK_TYPE_SUBTITLE;
+			}
+		}
+		else if(g_strcmp0(node->keys[i], "title") == 0)
+		{
+			entry->title = g_strdup(node->values[i].u.string);
+		}
+		else if(g_strcmp0(node->keys[i], "lang") == 0)
+		{
+			entry->lang = g_strdup(node->values[i].u.string);
+		}
+		else if(g_strcmp0(node->keys[i], "id") == 0)
+		{
+			entry->id = node->values[i].u.int64;
+		}
+	}
+
+	return entry;
 }
 
 static void mpv_prop_change_handler(GmpvMpv *mpv, mpv_event_property* prop)
@@ -175,7 +253,7 @@ static void mpv_prop_change_handler(GmpvMpv *mpv, mpv_event_property* prop)
 
 		if(idle_active && !mpv->state.paused)
 		{
-			gmpv_mpv_load(mpv, NULL, FALSE, TRUE);
+			load_from_playlist(mpv);
 		}
 	}
 }
@@ -331,10 +409,11 @@ static void update_playlist(GmpvMpv *mpv)
 	gint playlist_count;
 	gint i;
 
-	mpv_check_error(mpv_get_property(	mpv->mpv_ctx,
-						"playlist",
-						MPV_FORMAT_NODE,
-						&mpv_playlist ));
+	mpv_get_property(	mpv->mpv_ctx,
+				"playlist",
+				MPV_FORMAT_NODE,
+				&mpv_playlist );
+
 	playlist_count = mpv_playlist.u.list->num;
 
 	gtk_tree_model_get_iter_first(GTK_TREE_MODEL(store), &iter);
@@ -781,23 +860,6 @@ GmpvMpv *gmpv_mpv_new(GmpvPlaylist *playlist, gint64 wid)
 						NULL ));
 }
 
-void mpv_check_error(int status)
-{
-	void *array[10];
-	size_t size;
-
-	if(status < 0)
-	{
-		size = (size_t)backtrace(array, 10);
-
-		g_critical("MPV API error: %s\n", mpv_error_string(status));
-
-		backtrace_symbols_fd(array, (int)size, STDERR_FILENO);
-
-		exit(EXIT_FAILURE);
-	}
-}
-
 inline const GmpvMpvState *gmpv_mpv_get_state(GmpvMpv *mpv)
 {
 	return &mpv->state;
@@ -828,6 +890,32 @@ inline mpv_opengl_cb_context *gmpv_mpv_get_opengl_cb_context(GmpvMpv *mpv)
 	return mpv->opengl_ctx;
 }
 
+GSList *gmpv_mpv_get_track_list(GmpvMpv *mpv)
+{
+	GSList *result = NULL;
+	mpv_node_list *org_list = NULL;
+	mpv_node track_list;
+
+	gmpv_mpv_get_property(mpv, "track-list", MPV_FORMAT_NODE, &track_list);
+
+	if(track_list.format == MPV_FORMAT_NODE_ARRAY)
+	{
+		org_list = track_list.u.list;
+
+		for(gint i = 0; i < org_list->num; i++)
+		{
+			GmpvTrack *entry =	parse_track_entry
+						(org_list->values[i].u.list);
+
+			result = g_slist_prepend(result, entry);
+		}
+
+		mpv_free_node_contents(&track_list);
+	}
+
+	return g_slist_reverse(result);
+}
+
 void gmpv_mpv_initialize(GmpvMpv *mpv)
 {
 	GSettings *main_settings = g_settings_new(CONFIG_ROOT);
@@ -849,7 +937,7 @@ void gmpv_mpv_initialize(GmpvMpv *mpv)
 			{"title", "${media-title}"},
 			{"autofit-larger", "75%"},
 			{"window-scale", "1"},
-			{"pause", "no"},
+			{"pause", "yes"},
 			{"ytdl", "yes"},
 			{"osd-bar", "no"},
 			{"input-cursor", "no"},
@@ -928,19 +1016,23 @@ void gmpv_mpv_initialize(GmpvMpv *mpv)
 		mpv_set_option(mpv->mpv_ctx, "wid", MPV_FORMAT_INT64, &mpv->wid);
 	}
 
-	mpv_observe_property(mpv->mpv_ctx, 0, "aid", MPV_FORMAT_INT64);
+	mpv_observe_property(mpv->mpv_ctx, 0, "aid", MPV_FORMAT_STRING);
+	mpv_observe_property(mpv->mpv_ctx, 0, "vid", MPV_FORMAT_STRING);
+	mpv_observe_property(mpv->mpv_ctx, 0, "sid", MPV_FORMAT_STRING);
 	mpv_observe_property(mpv->mpv_ctx, 0, "chapters", MPV_FORMAT_INT64);
 	mpv_observe_property(mpv->mpv_ctx, 0, "core-idle", MPV_FORMAT_FLAG);
+	mpv_observe_property(mpv->mpv_ctx, 0, "idle-active", MPV_FORMAT_FLAG);
 	mpv_observe_property(mpv->mpv_ctx, 0, "fullscreen", MPV_FORMAT_FLAG);
 	mpv_observe_property(mpv->mpv_ctx, 0, "pause", MPV_FORMAT_FLAG);
+	mpv_observe_property(mpv->mpv_ctx, 0, "loop", MPV_FORMAT_STRING);
 	mpv_observe_property(mpv->mpv_ctx, 0, "duration", MPV_FORMAT_DOUBLE);
 	mpv_observe_property(mpv->mpv_ctx, 0, "media-title", MPV_FORMAT_STRING);
+	mpv_observe_property(mpv->mpv_ctx, 0, "playlist-count", MPV_FORMAT_INT64);
 	mpv_observe_property(mpv->mpv_ctx, 0, "playlist-pos", MPV_FORMAT_INT64);
 	mpv_observe_property(mpv->mpv_ctx, 0, "track-list", MPV_FORMAT_NODE);
 	mpv_observe_property(mpv->mpv_ctx, 0, "volume", MPV_FORMAT_DOUBLE);
 	mpv_set_wakeup_callback(mpv->mpv_ctx, wakeup_callback, mpv);
-	mpv_check_error(mpv_initialize(mpv->mpv_ctx));
-
+	mpv_initialize(mpv->mpv_ctx);
 
 	mpv_version = gmpv_mpv_get_property_string(mpv, "mpv-version");
 	current_vo = gmpv_mpv_get_property_string(mpv, "current-vo");
@@ -1042,7 +1134,7 @@ void gmpv_mpv_reset(GmpvMpv *mpv)
 	/* Reset mpv->mpv_ctx */
 	mpv->state.ready = FALSE;
 
-	mpv_check_error(gmpv_mpv_command(mpv, quit_cmd));
+	gmpv_mpv_command(mpv, quit_cmd);
 	gmpv_mpv_quit(mpv);
 
 	mpv->mpv_ctx = mpv_create();
@@ -1059,17 +1151,9 @@ void gmpv_mpv_reset(GmpvMpv *mpv)
 	{
 		if(mpv->state.loaded)
 		{
-			gint rc;
-
-			rc =	mpv_request_event
-				(mpv->mpv_ctx, MPV_EVENT_FILE_LOADED, 0);
-			mpv_check_error(rc);
-
-			gmpv_mpv_load(mpv, NULL, FALSE, TRUE);
-
-			rc =	mpv_request_event
-				(mpv->mpv_ctx, MPV_EVENT_FILE_LOADED, 1);
-			mpv_check_error(rc);
+			mpv_request_event(mpv->mpv_ctx, MPV_EVENT_FILE_LOADED, 0);
+			load_from_playlist(mpv);
+			mpv_request_event(mpv->mpv_ctx, MPV_EVENT_FILE_LOADED, 1);
 		}
 
 		if(playlist_pos_rc >= 0 && playlist_pos > 0)
@@ -1110,14 +1194,39 @@ void gmpv_mpv_quit(GmpvMpv *mpv)
 	mpv->mpv_ctx = NULL;
 }
 
-void gmpv_mpv_load(	GmpvMpv *mpv,
-			const gchar *uri,
-			gboolean append,
-			gboolean update )
+void gmpv_mpv_load_track(GmpvMpv *mpv, const gchar *uri, TrackType type)
+{
+	const gchar *cmd[3] = {NULL};
+	gchar *path = g_filename_from_uri(uri, NULL, NULL);
+
+	if(type == TRACK_TYPE_AUDIO)
+	{
+		cmd[0] = "audio-add";
+	}
+	else if(type == TRACK_TYPE_SUBTITLE)
+	{
+		cmd[0] = "sub-add";
+	}
+	else
+	{
+		g_assert_not_reached();
+	}
+
+	cmd[1] = path?:uri;
+
+	g_debug("Loading external track %s with type %d", cmd[1], type);
+	gmpv_mpv_command(mpv, cmd);
+
+	g_free(path);
+}
+
+void gmpv_mpv_load_file(	GmpvMpv *mpv,
+				const gchar *uri,
+				gboolean append,
+				gboolean update )
 {
 	const gchar *load_cmd[] = {"loadfile", NULL, NULL, NULL};
 	GtkListStore *playlist_store = gmpv_playlist_get_store(mpv->playlist);
-	GtkTreeIter iter;
 	gboolean empty;
 
 	g_info(	"Loading file (append=%s, update=%s): %s",
@@ -1125,8 +1234,7 @@ void gmpv_mpv_load(	GmpvMpv *mpv,
 		update?"TRUE":"FALSE",
 		uri?:"<PLAYLIST_ITEMS>" );
 
-	empty = !gtk_tree_model_get_iter_first
-			(GTK_TREE_MODEL(playlist_store), &iter);
+	empty = gmpv_playlist_empty(mpv->playlist);
 
 	load_cmd[2] = (append && !empty)?"append":"replace";
 
@@ -1138,37 +1246,7 @@ void gmpv_mpv_load(	GmpvMpv *mpv,
 
 	if(!uri)
 	{
-		gboolean append = FALSE;
-		gboolean rc;
-
-		if(!mpv->state.init_load)
-		{
-			gmpv_mpv_set_property_flag(mpv, "pause", FALSE);
-		}
-
-		rc = gtk_tree_model_get_iter_first
-			(GTK_TREE_MODEL(playlist_store), &iter);
-
-		while(rc)
-		{
-			gchar *uri;
-
-			gtk_tree_model_get(	GTK_TREE_MODEL(playlist_store),
-						&iter,
-						PLAYLIST_URI_COLUMN,
-						&uri,
-						-1 );
-
-			/* append = FALSE only on first iteration */
-			gmpv_mpv_load(mpv, uri, append, FALSE);
-
-			append = TRUE;
-
-			rc = gtk_tree_model_iter_next
-				(GTK_TREE_MODEL(playlist_store), &iter);
-
-			g_free(uri);
-		}
+		load_from_playlist(mpv);
 	}
 
 	if(uri && playlist_store)
@@ -1199,80 +1277,32 @@ void gmpv_mpv_load(	GmpvMpv *mpv,
 
 		g_assert(mpv->mpv_ctx);
 
-		mpv_check_error(mpv_request_event(	mpv->mpv_ctx,
-							MPV_EVENT_END_FILE,
-							0 ));
-
-		mpv_check_error(mpv_command(mpv->mpv_ctx, load_cmd));
-
-		mpv_check_error(mpv_request_event(	mpv->mpv_ctx,
-							MPV_EVENT_END_FILE,
-							1 ));
+		mpv_request_event(mpv->mpv_ctx, MPV_EVENT_END_FILE, 0);
+		mpv_command(mpv->mpv_ctx, load_cmd);
+		mpv_request_event(mpv->mpv_ctx, MPV_EVENT_END_FILE, 1);
 
 		g_free(path);
+	}
+}
+
+void gmpv_mpv_load(	GmpvMpv *mpv,
+			const gchar *uri,
+			gboolean append,
+			gboolean update )
+{
+	const gchar *subtitle_exts[] = SUBTITLE_EXTS;
+
+	if(extension_matches(uri, subtitle_exts))
+	{
+		gmpv_mpv_load_track(mpv, uri, TRACK_TYPE_SUBTITLE);
+	}
+	else
+	{
+		gmpv_mpv_load_file(mpv, uri, append, update);
 	}
 }
 
 void gmpv_mpv_free(gpointer data)
 {
 	mpv_free(data);
-}
-
-void gmpv_mpv_load_list(	GmpvMpv *mpv,
-				const gchar **uri_list,
-				gboolean append,
-				gboolean update )
-{
-	static const char *const sub_exts[] = SUBTITLE_EXTS;
-
-	for(gint i = 0; uri_list[i]; i++)
-	{
-		const gchar *ext = strrchr(uri_list[i], '.');
-		gboolean subtitle = FALSE;
-
-		/* Only start checking the extension if there is at
-		 * least one character after the dot.
-		 */
-		if(ext && ++ext)
-		{
-			const gchar *const *cur = sub_exts;
-
-			/* Check if the file extension matches one of the
-			 * supported subtitle formats.
-			 */
-			while(*cur && g_strcmp0(ext, *(cur++)) != 0);
-
-			subtitle = !!(*cur);
-		}
-
-		/* Only attempt to load file as subtitle if there
-		 * already is a file loaded. Try to load the file as a
-		 * media file otherwise.
-		 */
-		if(ext && subtitle && gmpv_mpv_get_state(mpv)->loaded)
-		{
-			const gchar *cmd[] = {"sub-add", NULL, NULL};
-			gchar *path;
-
-			/* Convert to path if possible to get rid of
-			 * percent encoding.
-			 */
-			path = g_filename_from_uri(uri_list[i], NULL, NULL);
-			cmd[1] = path?:uri_list[i];
-
-			g_debug("Loading external subtitle: %s", cmd[1]);
-			gmpv_mpv_command(mpv, cmd);
-
-			g_free(path);
-		}
-		else
-		{
-			gboolean empty = gmpv_playlist_empty(mpv->playlist);
-
-			gmpv_mpv_load(	mpv,
-					uri_list[i],
-					((append && !empty) || i != 0),
-					TRUE );
-		}
-	}
 }

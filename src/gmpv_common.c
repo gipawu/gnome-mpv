@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2014-2016 gnome-mpv
+ * Copyright (c) 2014-2017 gnome-mpv
  *
  * This file is part of GNOME MPV.
  *
@@ -161,20 +161,23 @@ void seek(GmpvApplication *app, gdouble time)
 
 }
 
-void show_error_dialog(GmpvApplication *app, const gchar *prefix, const gchar *msg)
+void show_message_dialog(	GmpvMainWindow *wnd,
+				GtkMessageType type,
+				const gchar *prefix,
+				const gchar *msg,
+				const gchar *title )
 {
-	GmpvMainWindow *wnd;
 	GtkWidget *dialog;
 	GtkWidget *msg_area;
 	GList *iter;
 
-	wnd = gmpv_application_get_main_window(app);
 	dialog =	gtk_message_dialog_new
 			(	GTK_WINDOW(wnd),
 				GTK_DIALOG_DESTROY_WITH_PARENT,
-				GTK_MESSAGE_ERROR,
+				type,
 				GTK_BUTTONS_OK,
-				_("Error") );
+				"%s",
+				title );
 	msg_area =	gtk_message_dialog_get_message_area
 			(GTK_MESSAGE_DIALOG(dialog));
 	iter = gtk_container_get_children(GTK_CONTAINER(msg_area));
@@ -214,8 +217,12 @@ void show_error_dialog(GmpvApplication *app, const gchar *prefix, const gchar *m
 			(GTK_MESSAGE_DIALOG(dialog), "%s", msg);
 	}
 
-	gtk_dialog_run(GTK_DIALOG(dialog));
-	gtk_widget_destroy(dialog);
+	g_signal_connect(	dialog,
+				"response",
+				G_CALLBACK(gtk_widget_destroy),
+				NULL );
+
+	gtk_widget_show_all(dialog);
 }
 
 void resize_window_to_fit(GmpvApplication *app, gdouble multiplier)
@@ -261,6 +268,44 @@ void resize_window_to_fit(GmpvApplication *app, gdouble multiplier)
 	}
 
 	gmpv_mpv_free(video);
+}
+
+gboolean extension_matches(const gchar *filename, const gchar **extensions)
+{
+	const gchar *ext = strrchr(filename, '.');
+	gboolean result = FALSE;
+
+	/* Only start checking the extension if there is at
+	 * least one character after the dot.
+	 */
+	if(ext && ++ext)
+	{
+		const gchar **iter = extensions;
+
+		/* Check if the file extension matches one of the
+		 * supported subtitle formats.
+		 */
+		while(*iter && g_strcmp0(ext, *(iter++)) != 0);
+
+		result = !!(*iter);
+	}
+
+	return result;
+}
+
+void *gslist_to_array(GSList *slist)
+{
+	void **result = g_malloc(sizeof(void **)*(g_slist_length(slist)+1));
+	gint i = 0;
+
+	for(GSList *iter = slist; iter; iter = g_slist_next(iter))
+	{
+		result[i++] = iter->data;
+	}
+
+	result[i] = NULL;
+
+	return result;
 }
 
 gchar *strnjoinv(const gchar *separator, const gchar **str_array, gsize count)
