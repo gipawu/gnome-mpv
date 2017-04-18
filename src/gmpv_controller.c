@@ -26,7 +26,7 @@
 
 #include "gmpv_controller_private.h"
 #include "gmpv_controller.h"
-#include "gmpv_inputctl.h"
+#include "gmpv_controller_input.h"
 #include "gmpv_track.h"
 #include "gmpv_def.h"
 
@@ -39,7 +39,7 @@ static void get_property(	GObject *object,
 				guint property_id,
 				GValue *value,
 				GParamSpec *pspec );
-static void ready_handler(GmpvView *view, gpointer data);
+static void view_ready_handler(GmpvView *view, gpointer data);
 static void render_handler(GmpvView *view, gpointer data);
 static void preferences_updated_handler(GmpvView *view, gpointer data);
 static void audio_track_load_handler(	GmpvView *view,
@@ -65,6 +65,7 @@ static void playlist_reordered_handler(	GmpvView *view,
 					gint dst,
 					gpointer data );
 static void connect_signals(GmpvController *controller);
+static gboolean update_seek_bar(gpointer data);
 static gboolean track_str_to_int(	GBinding *binding,
 					const GValue *from_value,
 					GValue *to_value,
@@ -88,7 +89,7 @@ static gboolean is_more_than_one(	GBinding *binding,
 static void idle_active_handler(	GObject *object,
 					GParamSpec *pspec,
 					gpointer data);
-static void controller_ready_handler(	GObject *object,
+static void model_ready_handler(	GObject *object,
 					GParamSpec *pspec,
 					gpointer data );
 static void frame_ready_handler(GmpvModel *model, gpointer data);
@@ -113,7 +114,7 @@ static void constructed(GObject *object)
 	GmpvController *controller = GMPV_CONTROLLER(object);
 
 	connect_signals(controller);
-	gmpv_inputctl_connect_signals(controller);
+	gmpv_controller_input_connect_signals(controller);
 }
 
 static void set_property(	GObject *object,
@@ -210,7 +211,7 @@ static void get_property(	GObject *object,
 	}
 }
 
-static void ready_handler(GmpvView *view, gpointer data)
+static void view_ready_handler(GmpvView *view, gpointer data)
 {
 	gmpv_model_initialize(GMPV_CONTROLLER(data)->model);
 }
@@ -218,11 +219,13 @@ static void ready_handler(GmpvView *view, gpointer data)
 static void render_handler(GmpvView *view, gpointer data)
 {
 	GmpvController *controller = data;
+	gint scale = 1;
 	gint width = -1;
 	gint height = -1;
 
+	scale = gmpv_view_get_scale_factor(controller->view);
 	gmpv_view_get_video_area_geometry(controller->view, &width, &height);
-	gmpv_model_render_frame(controller->model, width, height);
+	gmpv_model_render_frame(controller->model, scale*width, scale*height);
 
 	while(gtk_events_pending())
 	{
@@ -300,9 +303,6 @@ static void playlist_reordered_handler(	GmpvView *view,
 
 static void connect_signals(GmpvController *controller)
 {
-	g_object_bind_property(	controller->model, "ready",
-				controller, "ready",
-				G_BINDING_DEFAULT );
 	g_object_bind_property_full(	controller->model, "aid",
 					controller, "aid",
 					G_BINDING_BIDIRECTIONAL,
@@ -363,7 +363,7 @@ static void connect_signals(GmpvController *controller)
 
 	g_signal_connect(	controller->model,
 				"notify::ready",
-				G_CALLBACK(controller_ready_handler),
+				G_CALLBACK(model_ready_handler),
 				controller );
 	g_signal_connect(	controller->model,
 				"notify::idle-active",
@@ -421,7 +421,7 @@ static void connect_signals(GmpvController *controller)
 
 	g_signal_connect(	controller->view,
 				"ready",
-				G_CALLBACK(ready_handler),
+				G_CALLBACK(view_ready_handler),
 				controller );
 	g_signal_connect(	controller->view,
 				"render",
@@ -463,6 +463,21 @@ static void connect_signals(GmpvController *controller)
 				"playlist-reordered",
 				G_CALLBACK(playlist_reordered_handler),
 				controller );
+
+	controller->update_seekbar_id
+		= g_timeout_add(	SEEK_BAR_UPDATE_INTERVAL,
+					(GSourceFunc)update_seek_bar,
+					controller );
+}
+
+gboolean update_seek_bar(gpointer data)
+{
+	GmpvController *controller = data;
+	gdouble time_pos = gmpv_model_get_time_position(controller->model);
+
+	gmpv_view_set_time_position(controller->view, time_pos);
+
+	return TRUE;
 }
 
 static gboolean track_str_to_int(	GBinding *binding,
@@ -548,19 +563,32 @@ static void idle_active_handler(	GObject *object,
 	}
 }
 
-static void controller_ready_handler(	GObject *object,
+static void model_ready_handler(	GObject *object,
 					GParamSpec *pspec,
 					gpointer data )
 {
 	GmpvController *controller = data;
+	gboolean ready = FALSE;
 
-	/* current_vo should be NULL if the selected vo is opengl-cb */
-	if(gmpv_model_get_use_opengl_cb(controller->model))
+	g_object_get(object, "ready", &ready, NULL);
+
+	if(ready)
 	{
-		gmpv_view_set_use_opengl_cb(controller->view, TRUE);
-		gmpv_view_make_gl_context_current(controller->view);
-		gmpv_model_initialize_gl(controller->model);
+		gboolean use_opengl_cb;
+
+		use_opengl_cb = gmpv_model_get_use_opengl_cb(controller->model);
+
+		gmpv_view_set_use_opengl_cb(controller->view, use_opengl_cb);
+
+		if(use_opengl_cb)
+		{
+			gmpv_view_make_gl_context_current(controller->view);
+			gmpv_model_initialize_gl(controller->model);
+		}
 	}
+
+	controller->ready = ready;
+	g_object_notify(data, "ready");
 }
 
 static void frame_ready_handler(GmpvModel *model, gpointer data)
@@ -599,7 +627,10 @@ static void message_handler(GmpvMpv *mpv, const gchar *message, gpointer data)
 
 static void shutdown_handler(GmpvMpv *mpv, gpointer data)
 {
-	gmpv_view_make_gl_context_current(GMPV_CONTROLLER(data)->view);
+	GmpvController *controller = data;
+
+	g_source_remove(controller->update_seekbar_id);
+	gmpv_view_make_gl_context_current(controller->view);
 }
 
 static void post_shutdown_handler(GmpvMpv *mpv, gpointer data)
@@ -766,6 +797,7 @@ static void gmpv_controller_init(GmpvController *controller)
 	controller->files = NULL;
 	controller->inhibit_cookie = 0;
 	controller->target_playlist_pos = -1;
+	controller->update_seekbar_id = 0;
 }
 
 GmpvController *gmpv_controller_new(GmpvModel *model, GmpvView *view)

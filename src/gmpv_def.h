@@ -27,8 +27,9 @@
 #define CONFIG_WIN_STATE APP_ID".window-state"
 #define ACTION_PREFIX "gmpv-action"
 #define DEFAULT_LOG_LEVEL MPV_LOG_LEVEL_ERROR
-#define MPRIS_TRACK_ID_PREFIX "/org/gnome_mpv/GmpvTrack/"
-#define MPRIS_BUS_NAME "org.mpris.MediaPlayer2.gnome-mpv"
+#define MPRIS_TRACK_ID_NO_TRACK "/org/mpris/MediaPlayer2/TrackList/NoTrack"
+#define MPRIS_TRACK_ID_PREFIX "/io/github/GnomeMpv/Track/"
+#define MPRIS_BUS_NAME "org.mpris.MediaPlayer2.GnomeMpv"
 #define MPRIS_OBJ_ROOT_PATH "/org/mpris/MediaPlayer2"
 #define PLAYLIST_DEFAULT_WIDTH 200
 #define PLAYLIST_MIN_WIDTH 20
@@ -216,15 +217,15 @@
 					"rar",\
 					NULL }
 
-#define SUPPORTED_MIME_TYPES	{	"gmpv_application/ogg",\
-					"gmpv_application/x-ogg",\
-					"gmpv_application/sdp",\
-					"gmpv_application/smil",\
-					"gmpv_application/x-smil",\
-					"gmpv_application/streamingmedia",\
-					"gmpv_application/x-streamingmedia",\
-					"gmpv_application/vnd.rn-realmedia",\
-					"gmpv_application/vnd.rn-realmedia-vbr",\
+#define SUPPORTED_MIME_TYPES	{	"application/ogg",\
+					"application/x-ogg",\
+					"application/sdp",\
+					"application/smil",\
+					"application/x-smil",\
+					"application/streamingmedia",\
+					"application/x-streamingmedia",\
+					"application/vnd.rn-realmedia",\
+					"application/vnd.rn-realmedia-vbr",\
 					"audio/aac",\
 					"audio/x-aac",\
 					"audio/m4a",\

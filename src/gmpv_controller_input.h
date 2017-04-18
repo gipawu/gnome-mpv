@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2015-2016 gnome-mpv
+ * Copyright (c) 2016-2017 gnome-mpv
  *
  * This file is part of GNOME MPV.
  *
@@ -17,16 +17,16 @@
  * along with GNOME MPV.  If not, see <http://www.gnu.org/licenses/>.
  */
 
-#ifndef ACTIONCTL_H
-#define ACTIONCTL_H
+#ifndef CONTROLLER_INPUT_H
+#define CONTROLLER_INPUT_H
 
 #include <glib.h>
 
-#include "gmpv_application.h"
+#include "gmpv_controller_input.h"
 
 G_BEGIN_DECLS
 
-void gmpv_actionctl_map_actions(GmpvApplication *app);
+void gmpv_controller_input_connect_signals(GmpvController *controller);
 
 G_END_DECLS
 

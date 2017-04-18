@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2015-2016 gnome-mpv
+ * Copyright (c) 2015-2017 gnome-mpv
  *
  * This file is part of GNOME MPV.
  *
@@ -22,7 +22,14 @@
 
 #include "gmpv_mpris.h"
 
-void gmpv_mpris_player_register(gmpv_mpris *inst);
-void gmpv_mpris_player_unregister(gmpv_mpris *inst);
+G_BEGIN_DECLS
+
+#define GMPV_TYPE_MPRIS_PLAYER (gmpv_mpris_player_get_type())
+G_DECLARE_FINAL_TYPE(GmpvMprisPlayer, gmpv_mpris_player, GMPV, MPRIS_PLAYER, GmpvMprisModule)
+
+GmpvMprisPlayer *gmpv_mpris_player_new(	GmpvApplication *app,
+					GDBusConnection *conn );
+
+G_END_DECLS
 
 #endif

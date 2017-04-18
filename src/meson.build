@@ -1,14 +1,14 @@
 gnome = import('gnome')
 
 sources = [
-  'gmpv_actionctl.c',
   'gmpv_application.c',
+  'gmpv_application_action.c',
   'gmpv_common.c',
   'gmpv_control_box.c',
   'gmpv_controller.c',
+  'gmpv_controller_input.c',
   'gmpv_file_chooser.c',
   'gmpv_header_bar.c',
-  'gmpv_inputctl.c',
   'gmpv_main.c',
   'gmpv_main_window.c',
   'gmpv_menu.c',
@@ -17,7 +17,6 @@ sources = [
   'gmpv_mpv_opt.c',
   'gmpv_mpv_wrapper.c',
   'gmpv_open_loc_dialog.c',
-  'gmpv_playbackctl.c',
   'gmpv_playlist.c',
   'gmpv_playlist_widget.c',
   'gmpv_plugins_manager.c',
@@ -32,8 +31,10 @@ sources = [
   'media_keys/gmpv_media_keys.c',
 
   'mpris/gmpv_mpris.c',
+  'mpris/gmpv_mpris_module.c',
   'mpris/gmpv_mpris_base.c',
-  'mpris/gmpv_mpris_player.c'
+  'mpris/gmpv_mpris_player.c',
+  'mpris/gmpv_mpris_track_list.c'
 ]
 
 sources += custom_target('authors',

@@ -4,8 +4,10 @@ bin_PROGRAMS = gnome-mpv
 
 mpris_generated = mpris/gmpv_mpris_gdbus.c mpris/gmpv_mpris_gdbus.h
 mpris_files =	mpris/gmpv_mpris.c mpris/gmpv_mpris.h \
+		mpris/gmpv_mpris_module.c mpris/gmpv_mpris_module.h \
 		mpris/gmpv_mpris_base.c mpris/gmpv_mpris_base.h \
 		mpris/gmpv_mpris_player.c mpris/gmpv_mpris_player.h \
+		mpris/gmpv_mpris_track_list.c mpris/gmpv_mpris_track_list.h \
 		$(mpris_generated)
 $(mpris_generated): $(top_srcdir)/data/gmpv_mpris_gdbus.xml
 	$(AM_V_GEN) \
@@ -37,17 +39,17 @@ media_key_files = media_keys/gmpv_media_keys.c media_keys/gmpv_media_keys.h
 BUILT_SOURCES = $(mpris_generated) $(marshal_generated) $(authors_generated)
 
 gnome_mpv_SOURCES =	gmpv_main.c gmpv_def.h \
-			gmpv_actionctl.c gmpv_actionctl.h \
 			gmpv_application.c gmpv_application.h \
 			gmpv_application_private.h \
+			gmpv_application_action.c gmpv_application_action.h \
 			gmpv_common.c gmpv_common.h \
 			gmpv_controller.c gmpv_controller.h \
 			gmpv_controller_private.h \
+			gmpv_controller_input.c gmpv_controller_input.h \
 			gmpv_control_box.c gmpv_control_box.h \
 			gmpv_file_chooser.c gmpv_file_chooser.h \
 			gmpv_geometry.h \
 			gmpv_header_bar.c gmpv_header_bar.h \
-			gmpv_inputctl.c gmpv_inputctl.h \
 			gmpv_main_window.c gmpv_main_window.h \
 			gmpv_menu.c gmpv_menu.h \
 			gmpv_model.c gmpv_model.h \
@@ -55,7 +57,6 @@ gnome_mpv_SOURCES =	gmpv_main.c gmpv_def.h \
 			gmpv_mpv_private.h \
 			gmpv_mpv_opt.c gmpv_mpv_opt.h \
 			gmpv_open_loc_dialog.c gmpv_open_loc_dialog.h \
-			gmpv_playbackctl.c gmpv_playbackctl.h \
 			gmpv_playlist.c gmpv_playlist.h \
 			gmpv_playlist_widget.c gmpv_playlist_widget.h \
 			gmpv_plugins_manager.c gmpv_plugins_manager.h \

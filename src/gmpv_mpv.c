@@ -63,6 +63,7 @@ static void get_inst_property(	GObject *object,
 				GParamSpec *pspec );
 static void load_from_playlist(GmpvMpv *mpv);
 static void wakeup_callback(void *data);
+static GmpvPlaylistEntry *parse_playlist_entry(mpv_node_list *node);
 static GmpvTrack *parse_track_entry(mpv_node_list *node);
 static void mpv_prop_change_handler(GmpvMpv *mpv, mpv_event_property* prop);
 static gboolean mpv_event_handler(gpointer data);
@@ -194,6 +195,26 @@ static void load_from_playlist(GmpvMpv *mpv)
 static void wakeup_callback(void *data)
 {
 	g_idle_add((GSourceFunc)mpv_event_handler, data);
+}
+
+static GmpvPlaylistEntry *parse_playlist_entry(mpv_node_list *node)
+{
+	const gchar *filename = NULL;
+	const gchar *title = NULL;
+
+	for(gint i = 0; i < node->num; i++)
+	{
+		if(g_strcmp0(node->keys[i], "filename") == 0)
+		{
+			filename = node->values[i].u.string;
+		}
+		else if(g_strcmp0(node->keys[i], "title") == 0)
+		{
+			title = node->values[i].u.string;
+		}
+	}
+
+	return gmpv_playlist_entry_new(filename, title);
 }
 
 static GmpvTrack *parse_track_entry(mpv_node_list *node)
@@ -345,9 +366,11 @@ static gboolean mpv_event_handler(gpointer data)
 			if(mpv->state.new_file)
 			{
 				gmpv_mpv_opt_handle_autofit(mpv);
-			}
 
-			g_signal_emit_by_name(mpv, "video-reconfig");
+				g_signal_emit_by_name(	mpv,
+							"autofit",
+							mpv->autofit_ratio );
+			}
 		}
 		else if(event->event_id == MPV_EVENT_PLAYBACK_RESTART)
 		{
@@ -397,17 +420,17 @@ static gboolean mpv_event_handler(gpointer data)
 
 static void update_playlist(GmpvMpv *mpv)
 {
-	/* The length of "playlist//filename" including null-terminator (19)
-	 * plus the number of digits in the maximum value of 64 bit int (19).
-	 */
-	const gsize filename_prop_str_size = 38;
 	GtkListStore *store = gmpv_playlist_get_store(mpv->playlist);
-	gchar *filename_prop_str = g_malloc(filename_prop_str_size);
 	gboolean iter_end = FALSE;
 	GtkTreeIter iter;
 	mpv_node mpv_playlist;
 	gint playlist_count;
 	gint i;
+
+	if(!gtk_tree_model_get_iter_first(GTK_TREE_MODEL(store), &iter))
+	{
+		return;
+	}
 
 	mpv_get_property(	mpv->mpv_ctx,
 				"playlist",
@@ -415,8 +438,6 @@ static void update_playlist(GmpvMpv *mpv)
 				&mpv_playlist );
 
 	playlist_count = mpv_playlist.u.list->num;
-
-	gtk_tree_model_get_iter_first(GTK_TREE_MODEL(store), &iter);
 
 	for(i = 0; i < playlist_count; i++)
 	{
@@ -504,7 +525,6 @@ static void update_playlist(GmpvMpv *mpv)
 		while(gtk_list_store_remove(store, &iter));
 	}
 
-	g_free(filename_prop_str);
 	mpv_free_node_contents(&mpv_playlist);
 }
 
@@ -809,15 +829,16 @@ static void gmpv_mpv_class_init(GmpvMpvClass* klass)
 			G_TYPE_NONE,
 			1,
 			G_TYPE_STRING );
-	g_signal_new(	"video-reconfig",
+	g_signal_new(	"autofit",
 			G_TYPE_FROM_CLASS(klass),
 			G_SIGNAL_RUN_FIRST,
 			0,
 			NULL,
 			NULL,
-			g_cclosure_marshal_VOID__VOID,
+			g_cclosure_marshal_VOID__DOUBLE,
 			G_TYPE_NONE,
-			0 );
+			1,
+			G_TYPE_DOUBLE );
 	g_signal_new(	"shutdown",
 			G_TYPE_FROM_CLASS(klass),
 			G_SIGNAL_RUN_FIRST,
@@ -846,10 +867,46 @@ static void gmpv_mpv_init(GmpvMpv *mpv)
 	mpv->state.init_load = TRUE;
 
 	mpv->force_opengl = FALSE;
+	mpv->use_opengl = FALSE;
 	mpv->glarea = NULL;
 	mpv->wid = -1;
 	mpv->opengl_cb_callback_data = NULL;
 	mpv->opengl_cb_callback = NULL;
+}
+
+GmpvMetadataEntry *gmpv_metadata_entry_new(const gchar *key, const gchar *value)
+{
+	GmpvMetadataEntry *entry = g_malloc(sizeof(GmpvMetadataEntry));
+
+	entry->key = g_strdup(key);
+	entry->value = g_strdup(value);
+
+	return entry;
+}
+
+void gmpv_metadata_entry_free(GmpvMetadataEntry *entry)
+{
+	g_free(entry->key);
+	g_free(entry->value);
+	g_free(entry);
+}
+
+GmpvPlaylistEntry *gmpv_playlist_entry_new(	const gchar *filename,
+						const gchar *title )
+{
+	GmpvPlaylistEntry *entry = g_malloc(sizeof(GmpvPlaylistEntry));
+
+	entry->filename = g_strdup(filename);
+	entry->title = g_strdup(title);
+
+	return entry;
+}
+
+void gmpv_playlist_entry_free(GmpvPlaylistEntry *entry)
+{
+	g_free(entry->filename);
+	g_free(entry->title);
+	g_free(entry);
 }
 
 GmpvMpv *gmpv_mpv_new(GmpvPlaylist *playlist, gint64 wid)
@@ -870,16 +927,6 @@ inline GmpvGeometry *gmpv_mpv_get_geometry(GmpvMpv *mpv)
 	return mpv->geometry;
 }
 
-inline gdouble gmpv_mpv_get_autofit_ratio(GmpvMpv *mpv)
-{
-	return mpv->autofit_ratio;
-}
-
-inline GmpvPlaylist *gmpv_mpv_get_playlist(GmpvMpv *mpv)
-{
-	return mpv->playlist;
-}
-
 inline mpv_handle *gmpv_mpv_get_mpv_handle(GmpvMpv *mpv)
 {
 	return mpv->mpv_ctx;
@@ -890,30 +937,117 @@ inline mpv_opengl_cb_context *gmpv_mpv_get_opengl_cb_context(GmpvMpv *mpv)
 	return mpv->opengl_ctx;
 }
 
-GSList *gmpv_mpv_get_track_list(GmpvMpv *mpv)
+inline gboolean gmpv_mpv_get_use_opengl_cb(GmpvMpv *mpv)
 {
-	GSList *result = NULL;
+	return mpv->use_opengl;
+}
+
+GPtrArray *gmpv_mpv_get_metadata(GmpvMpv *mpv)
+{
+	GPtrArray *result = NULL;
+	mpv_node_list *org_list = NULL;
+	mpv_node metadata;
+
+	gmpv_mpv_get_property(mpv, "metadata", MPV_FORMAT_NODE, &metadata);
+	org_list = metadata.u.list;
+
+	if(metadata.format == MPV_FORMAT_NODE_MAP && org_list->num > 0)
+	{
+		result = g_ptr_array_new_full(	(guint)
+						org_list->num,
+						(GDestroyNotify)
+						gmpv_metadata_entry_free );
+
+		for(gint i = 0; i < org_list->num; i++)
+		{
+			const gchar *key;
+			mpv_node value;
+
+			key = org_list->keys[i];
+			value = org_list->values[i];
+
+			if(value.format == MPV_FORMAT_STRING)
+			{
+				GmpvMetadataEntry *entry;
+
+				entry =	gmpv_metadata_entry_new
+					(key, value.u.string);
+
+				g_ptr_array_add(result, entry);
+			}
+			else
+			{
+				g_warning(	"Ignored metadata field %s "
+						"with unexpected format %d",
+						key,
+						value.format );
+			}
+		}
+
+		mpv_free_node_contents(&metadata);
+	}
+
+	return result;
+}
+
+GPtrArray *gmpv_mpv_get_playlist(GmpvMpv *mpv)
+{
+	GPtrArray *result = NULL;
+	const mpv_node_list *org_list;
+	mpv_node playlist;
+
+	gmpv_mpv_get_property(mpv, "playlist", MPV_FORMAT_NODE, &playlist);
+	org_list = playlist.u.list;
+
+	if(playlist.format == MPV_FORMAT_NODE_ARRAY && org_list->num > 0)
+	{
+		result = g_ptr_array_new_full(	(guint)
+						org_list->num,
+						(GDestroyNotify)
+						gmpv_playlist_entry_free );
+
+		for(gint i = 0; i < org_list->num; i++)
+		{
+			GmpvPlaylistEntry *entry;
+
+			entry = parse_playlist_entry(org_list->values[i].u.list);
+			g_ptr_array_add(result, entry);
+		}
+
+		mpv_free_node_contents(&playlist);
+	}
+
+	return result;
+}
+
+GPtrArray *gmpv_mpv_get_track_list(GmpvMpv *mpv)
+{
+	GPtrArray *result = NULL;
 	mpv_node_list *org_list = NULL;
 	mpv_node track_list;
 
 	gmpv_mpv_get_property(mpv, "track-list", MPV_FORMAT_NODE, &track_list);
+	org_list = track_list.u.list;
 
 	if(track_list.format == MPV_FORMAT_NODE_ARRAY)
 	{
-		org_list = track_list.u.list;
+		result = g_ptr_array_new_full(	(guint)
+						org_list->num,
+						(GDestroyNotify)
+						gmpv_track_free );
 
 		for(gint i = 0; i < org_list->num; i++)
 		{
 			GmpvTrack *entry =	parse_track_entry
 						(org_list->values[i].u.list);
 
-			result = g_slist_prepend(result, entry);
+			g_ptr_array_add(result, entry);
 		}
 
 		mpv_free_node_contents(&track_list);
 	}
 
-	return g_slist_reverse(result);
+	return result;
 }
 
 void gmpv_mpv_initialize(GmpvMpv *mpv)
@@ -1027,8 +1161,11 @@ void gmpv_mpv_initialize(GmpvMpv *mpv)
 	mpv_observe_property(mpv->mpv_ctx, 0, "loop", MPV_FORMAT_STRING);
 	mpv_observe_property(mpv->mpv_ctx, 0, "duration", MPV_FORMAT_DOUBLE);
 	mpv_observe_property(mpv->mpv_ctx, 0, "media-title", MPV_FORMAT_STRING);
+	mpv_observe_property(mpv->mpv_ctx, 0, "metadata", MPV_FORMAT_NODE);
+	mpv_observe_property(mpv->mpv_ctx, 0, "playlist", MPV_FORMAT_NODE);
 	mpv_observe_property(mpv->mpv_ctx, 0, "playlist-count", MPV_FORMAT_INT64);
 	mpv_observe_property(mpv->mpv_ctx, 0, "playlist-pos", MPV_FORMAT_INT64);
+	mpv_observe_property(mpv->mpv_ctx, 0, "speed", MPV_FORMAT_DOUBLE);
 	mpv_observe_property(mpv->mpv_ctx, 0, "track-list", MPV_FORMAT_NODE);
 	mpv_observe_property(mpv->mpv_ctx, 0, "volume", MPV_FORMAT_DOUBLE);
 	mpv_set_wakeup_callback(mpv->mpv_ctx, wakeup_callback, mpv);
@@ -1036,10 +1173,11 @@ void gmpv_mpv_initialize(GmpvMpv *mpv)
 
 	mpv_version = gmpv_mpv_get_property_string(mpv, "mpv-version");
 	current_vo = gmpv_mpv_get_property_string(mpv, "current-vo");
+	mpv->use_opengl = !current_vo;
 
 	g_info("Using %s", mpv_version);
 
-	if(current_vo && !GDK_IS_X11_DISPLAY(gdk_display_get_default()))
+	if(!mpv->use_opengl && !GDK_IS_X11_DISPLAY(gdk_display_get_default()))
 	{
 		g_info(	"The chosen vo is %s but the display is not X11; "
 			"forcing --vo=opengl-cb and resetting",
@@ -1064,8 +1202,7 @@ void gmpv_mpv_initialize(GmpvMpv *mpv)
 					MPV_FORMAT_DOUBLE,
 					&volume );
 
-		/* The vo should be opengl-cb if current_vo is NULL*/
-		if(!current_vo)
+		if(mpv->use_opengl)
 		{
 			mpv->opengl_ctx =	mpv_get_sub_api
 						(	mpv->mpv_ctx,

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2015-2016 gnome-mpv
+ * Copyright (c) 2017 gnome-mpv
  *
  * This file is part of GNOME MPV.
  *
@@ -17,15 +17,22 @@
  * along with GNOME MPV.  If not, see <http://www.gnu.org/licenses/>.
  */
 
-#ifndef PLAYBACKCTL_H
-#define PLAYBACKCTL_H
 
-#include <glib.h>
-#include "gmpv_application.h"
+#ifndef MPRIS_TRACK_LIST_H
+#define MPRIS_TRACK_LIST_H
+
+#include "gmpv_mpris_module.h"
+#include "gmpv_application_private.h"
+
+#include <glib-object.h>
 
 G_BEGIN_DECLS
 
-void gmpv_playbackctl_connect_signals(GmpvApplication *app);
+#define GMPV_TYPE_MPRIS_TRACK_LIST (gmpv_mpris_track_list_get_type())
+G_DECLARE_FINAL_TYPE(GmpvMprisTrackList, gmpv_mpris_track_list, GMPV, MPRIS_TRACK_LIST, GmpvMprisModule)
+
+GmpvMprisTrackList *gmpv_mpris_track_list_new(	GmpvApplication *app,
+						GDBusConnection *conn );
 
 G_END_DECLS
 

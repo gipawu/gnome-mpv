@@ -58,7 +58,7 @@ struct _GmpvView
 	gdouble volume;
 	gdouble duration;
 	gint playlist_pos;
-	GSList *track_list;
+	GPtrArray *track_list;
 	gboolean chapters_enabled;
 	gboolean control_box_enabled;
 	gboolean fullscreen;
@@ -804,8 +804,9 @@ static void drag_data_handler(	GtkWidget *widget,
 	{
 		if(!uri_list)
 		{
-			uri_list = g_malloc(sizeof(gchar *));
+			uri_list = g_malloc(2*sizeof(gchar *));
 			uri_list[0] = g_strdup((gchar *)raw_data);
+			uri_list[1] = NULL;
 		}
 
 		g_signal_emit_by_name(view, "file-open", uri_list, append);
@@ -1439,6 +1440,13 @@ void gmpv_view_set_use_opengl_cb(GmpvView *view, gboolean use_opengl_cb)
 	gmpv_video_area_set_use_opengl(area, use_opengl_cb);
 }
 
+gint gmpv_view_get_scale_factor(GmpvView *view)
+{
+	GdkWindow *gdk_window = gtk_widget_get_window(GTK_WIDGET(view->wnd));
+
+	return gdk_window_get_scale_factor(gdk_window);
+}
+
 void gmpv_view_get_video_area_geometry(GmpvView *view, gint *width, gint *height)
 {
 	GmpvVideoArea *area = gmpv_main_window_get_video_area(view->wnd);
@@ -1459,4 +1467,12 @@ void gmpv_view_set_fullscreen(GmpvView *view, gboolean fullscreen)
 {
 	g_object_set(view, "fullscreen", fullscreen, NULL);
 	gmpv_main_window_set_fullscreen(view->wnd, fullscreen);
+}
+
+void gmpv_view_set_time_position(GmpvView *view, gdouble position)
+{
+	GmpvControlBox *control_box;
+
+	control_box = gmpv_main_window_get_control_box(view->wnd);
+	gmpv_control_box_set_seek_bar_pos(control_box, position);
 }

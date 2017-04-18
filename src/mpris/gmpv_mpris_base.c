@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2015-2016 gnome-mpv
+ * Copyright (c) 2015-2017 gnome-mpv
  *
  * This file is part of GNOME MPV.
  *
@@ -23,14 +23,45 @@
 #include <gtk/gtk.h>
 #include <gdk/gdk.h>
 
-#include "gmpv_application.h"
-#include "gmpv_main_window.h"
+#include "gmpv_application_private.h"
+#include "gmpv_view.h"
 #include "gmpv_mpris.h"
+#include "gmpv_mpris_module.h"
 #include "gmpv_mpris_base.h"
 #include "gmpv_mpris_gdbus.h"
 #include "gmpv_def.h"
 
-static void prop_table_init(gmpv_mpris *inst);
+enum
+{
+	PROP_0,
+	PROP_APP,
+	N_PROPERTIES
+};
+
+
+struct _GmpvMprisBase
+{
+	GmpvMprisModule parent;
+	GmpvApplication *app;
+	guint reg_id;
+};
+
+struct _GmpvMprisBaseClass
+{
+	GmpvMprisModuleClass parent_class;
+};
+
+static void register_interface(GmpvMprisModule *module);
+static void unregister_interface(GmpvMprisModule *module);
+
+static void set_property(	GObject *object,
+				guint property_id,
+				const GValue *value,
+				GParamSpec *pspec );
+static void get_property(	GObject *object,
+				guint property_id,
+				GValue *value,
+				GParamSpec *pspec );
 static void method_handler(	GDBusConnection *connection,
 				const gchar *sender,
 				const gchar *object_path,
@@ -54,33 +85,107 @@ static gboolean set_prop_handler(	GDBusConnection *connection,
 					GVariant *value,
 					GError **error,
 					gpointer data );
-static gboolean window_state_handler(	GtkWidget *widget,
-					GdkEvent *event,
-					gpointer data );
+static void fullscreen_handler(	GObject *object,
+				GParamSpec *pspec,
+				gpointer data );
 static GVariant *get_supported_uri_schemes(void);
 static GVariant *get_supported_mime_types(void);
+static void gmpv_mpris_base_class_init(GmpvMprisBaseClass *klass);
+static void gmpv_mpris_base_init(GmpvMprisBase *base);
 
-static void prop_table_init(gmpv_mpris *inst)
+G_DEFINE_TYPE(GmpvMprisBase, gmpv_mpris_base, GMPV_TYPE_MPRIS_MODULE);
+
+static void register_interface(GmpvMprisModule *module)
 {
-	const gpointer default_values[]
-		= {	"CanQuit", g_variant_new_boolean(TRUE),
+	GmpvMprisBase *base;
+	GmpvView *view;
+	GDBusInterfaceVTable vtable;
+	GDBusInterfaceInfo *iface;
+	GDBusConnection *conn;
+
+	base = GMPV_MPRIS_BASE(module);
+	view = base->app->view;
+
+	g_object_get(module, "conn", &conn, "iface", &iface, NULL);
+
+	gmpv_mpris_module_connect_signal
+		(	module,
+			view,
+			"notify::fullscreen",
+			G_CALLBACK(fullscreen_handler),
+			module );
+
+	gmpv_mpris_module_set_properties
+		(	module,
+			"CanQuit", g_variant_new_boolean(TRUE),
 			"CanSetFullscreen", g_variant_new_boolean(TRUE),
 			"CanRaise", g_variant_new_boolean(TRUE),
 			"Fullscreen", g_variant_new_boolean(FALSE),
-			"HasTrackList", g_variant_new_boolean(FALSE),
+			"HasTrackList", g_variant_new_boolean(TRUE),
 			"Identity", g_variant_new_string(g_get_application_name()),
-			"DesktopEntry", g_variant_new_string(ICON_NAME),
+			"DesktopEntry", g_variant_new_string(APP_ID),
 			"SupportedUriSchemes", get_supported_uri_schemes(),
 			"SupportedMimeTypes", get_supported_mime_types(),
-			NULL };
+			NULL );
 
-	gint i;
+	vtable.method_call = (GDBusInterfaceMethodCallFunc)method_handler;
+	vtable.get_property = (GDBusInterfaceGetPropertyFunc)get_prop_handler;
+	vtable.set_property = (GDBusInterfaceSetPropertyFunc)set_prop_handler;
 
-	for(i = 0; default_values[i]; i += 2)
+	base->reg_id =	g_dbus_connection_register_object
+			(	conn,
+				MPRIS_OBJ_ROOT_PATH,
+				iface,
+				&vtable,
+				module,
+				NULL,
+				NULL );
+}
+
+static void unregister_interface(GmpvMprisModule *module)
+{
+	GmpvMprisBase *base = GMPV_MPRIS_BASE(module);
+	GDBusConnection *conn = NULL;
+
+	g_object_get(module, "conn", &conn, NULL);
+	g_dbus_connection_unregister_object(conn, base->reg_id);
+}
+
+static void set_property(	GObject *object,
+				guint property_id,
+				const GValue *value,
+				GParamSpec *pspec )
+{
+	GmpvMprisBase *self = GMPV_MPRIS_BASE(object);
+
+	switch(property_id)
 	{
-		g_hash_table_insert(	inst->base_prop_table,
-					default_values[i],
-					default_values[i+1] );
+		case PROP_APP:
+		self->app = g_value_get_pointer(value);
+		break;
+
+		default:
+		G_OBJECT_WARN_INVALID_PROPERTY_ID(object, property_id, pspec);
+		break;
+	}
+}
+
+static void get_property(	GObject *object,
+				guint property_id,
+				GValue *value,
+				GParamSpec *pspec )
+{
+	GmpvMprisBase *self = GMPV_MPRIS_BASE(object);
+
+	switch(property_id)
+	{
+		case PROP_APP:
+		g_value_set_pointer(value, self->app);
+		break;
+
+		default:
+		G_OBJECT_WARN_INVALID_PROPERTY_ID(object, property_id, pspec);
+		break;
 	}
 }
 
@@ -93,18 +198,15 @@ static void method_handler(	GDBusConnection *connection,
 				GDBusMethodInvocation *invocation,
 				gpointer data )
 {
-	gmpv_mpris *inst = data;
+	GmpvMprisBase *base = data;
 
 	if(g_strcmp0(method_name, "Raise") == 0)
 	{
-		GmpvMainWindow *wnd =	gmpv_application_get_main_window
-					(inst->gmpv_ctx);
-
-		gtk_window_present(GTK_WINDOW(wnd));
+		gmpv_view_present(base->app->view);
 	}
 	else if(g_strcmp0(method_name, "Quit") == 0)
 	{
-		gmpv_application_quit(inst->gmpv_ctx);
+		gmpv_application_quit(base->app);
 	}
 
 	g_dbus_method_invocation_return_value
@@ -119,11 +221,9 @@ static GVariant *get_prop_handler(	GDBusConnection *connection,
 					GError **error,
 					gpointer data )
 {
-	gmpv_mpris *inst = data;
-	GVariant *value;
+	GVariant *value = NULL;
 
-	value = g_hash_table_lookup(	inst->base_prop_table,
-					property_name );
+	gmpv_mpris_module_get_properties(data, property_name, &value, NULL);
 
 	return value?g_variant_ref(value):NULL;
 }
@@ -137,54 +237,42 @@ static gboolean set_prop_handler(	GDBusConnection *connection,
 					GError **error,
 					gpointer data )
 {
-	gmpv_mpris *inst = data;
-	GmpvMainWindow *wnd = gmpv_application_get_main_window(inst->gmpv_ctx);
+	GmpvMprisBase *base = data;
 
-	if(g_strcmp0(property_name, "Fullscreen") == 0
-	&& g_variant_get_boolean(value) != gmpv_main_window_get_fullscreen(wnd))
+	if(g_strcmp0(property_name, "Fullscreen") == 0)
 	{
-		gmpv_main_window_toggle_fullscreen(wnd);
+		gmpv_view_set_fullscreen
+			(base->app->view, g_variant_get_boolean(value));
 	}
 	else
 	{
-		g_hash_table_replace(	((gmpv_mpris *) data)->base_prop_table,
-					g_strdup(property_name),
-					g_variant_ref(value) );
+		gmpv_mpris_module_set_properties(	data,
+							property_name, value,
+							NULL );
 	}
 
 	return TRUE; /* This function should always succeed */
 }
 
-static gboolean window_state_handler(	GtkWidget *widget,
-					GdkEvent *event,
-					gpointer data )
+static void fullscreen_handler(	GObject *object,
+				GParamSpec *pspec,
+				gpointer data )
 {
-	gmpv_mpris *inst = data;
-	GmpvMainWindow *wnd = gmpv_application_get_main_window(inst->gmpv_ctx);
-	GdkEventWindowState *window_state_event = (GdkEventWindowState *)event;
+	GmpvMprisModule *module = data;
+	GVariant *old_value = NULL;
+	gboolean fullscreen = FALSE;
 
-	if(window_state_event->changed_mask & GDK_WINDOW_STATE_FULLSCREEN)
+	gmpv_mpris_module_get_properties(module, "Fullscreen", &old_value, NULL);
+	g_object_get(object, "fullscreen", &fullscreen, NULL);
+
+	if(g_variant_get_boolean(old_value) != fullscreen)
 	{
-		GDBusInterfaceInfo *iface;
-		GVariant *value;
-		gmpv_mpris_prop *prop_list;
-
-		iface = gmpv_mpris_org_mpris_media_player2_interface_info();
-		value =	g_variant_new_boolean
-			(gmpv_main_window_get_fullscreen(wnd));
-
-		g_hash_table_replace(	inst->base_prop_table,
-					g_strdup("Fullscreen"),
-					g_variant_ref(value) );
-
-		prop_list =	(gmpv_mpris_prop[])
-				{	{"Fullscreen", value},
-					{NULL, NULL} };
-
-		gmpv_mpris_emit_prop_changed(inst, iface->name, prop_list);
+		gmpv_mpris_module_set_properties
+			(	GMPV_MPRIS_MODULE(data),
+				"Fullscreen", g_variant_new_boolean(fullscreen),
+				NULL );
 	}
 
-	return FALSE;
 }
 
 static GVariant *get_supported_uri_schemes(void)
@@ -201,66 +289,41 @@ static GVariant *get_supported_mime_types(void)
 	return gmpv_mpris_build_g_variant_string_array(mime_types);
 }
 
-void gmpv_mpris_base_register(gmpv_mpris *inst)
+static void gmpv_mpris_base_class_init(GmpvMprisBaseClass *klass)
 {
-	GmpvMainWindow *wnd;
-	GDBusInterfaceVTable vtable;
+	GmpvMprisModuleClass *module_class = GMPV_MPRIS_MODULE_CLASS(klass);
+	GObjectClass *object_class = G_OBJECT_CLASS(klass);
+	GParamSpec *pspec = NULL;
+
+	module_class->register_interface = register_interface;
+	module_class->unregister_interface = unregister_interface;
+	object_class->set_property = set_property;
+	object_class->get_property = get_property;
+
+	pspec = g_param_spec_pointer
+		(	"app",
+			"Application",
+			"The GmpvApplication to use",
+			G_PARAM_CONSTRUCT_ONLY|G_PARAM_READWRITE );
+	g_object_class_install_property(object_class, PROP_APP, pspec);
+}
+
+static void gmpv_mpris_base_init(GmpvMprisBase *base)
+{
+	base->app = NULL;
+	base->reg_id = 0;
+}
+
+GmpvMprisBase *gmpv_mpris_base_new(GmpvApplication *app, GDBusConnection *conn)
+{
 	GDBusInterfaceInfo *iface;
 
-	wnd = gmpv_application_get_main_window(inst->gmpv_ctx);
 	iface = gmpv_mpris_org_mpris_media_player2_interface_info();
 
-	inst->base_prop_table =	g_hash_table_new_full
-				(	g_str_hash,
-					g_str_equal,
-					NULL,
-					(GDestroyNotify)g_variant_unref );
-	inst->base_sig_id_list = g_malloc(2*sizeof(gulong));
-
-	inst->base_sig_id_list[0] =	g_signal_connect
-					(	wnd,
-						"window-state-event",
-						G_CALLBACK(window_state_handler),
-						inst );
-	inst->base_sig_id_list[1] = 0;
-
-	prop_table_init(inst);
-
-	vtable.method_call = (GDBusInterfaceMethodCallFunc)method_handler;
-	vtable.get_property = (GDBusInterfaceGetPropertyFunc)get_prop_handler;
-	vtable.set_property = (GDBusInterfaceSetPropertyFunc)set_prop_handler;
-
-	inst->base_reg_id =	g_dbus_connection_register_object
-				(	inst->session_bus_conn,
-					MPRIS_OBJ_ROOT_PATH,
-					iface,
-					&vtable,
-					inst,
-					NULL,
-					NULL );
+	return GMPV_MPRIS_BASE(g_object_new(	gmpv_mpris_base_get_type(),
+						"app", app,
+						"conn", conn,
+						"iface", iface,
+						NULL ));
 }
 
-void gmpv_mpris_base_unregister(gmpv_mpris *inst)
-{
-	gulong *current_sig_id = inst->base_sig_id_list;
-
-	if(current_sig_id)
-	{
-		while(current_sig_id && *current_sig_id > 0)
-		{
-			GmpvMainWindow *wnd;
-
-			wnd = gmpv_application_get_main_window(inst->gmpv_ctx);
-			g_signal_handler_disconnect(wnd, *current_sig_id);
-
-			current_sig_id++;
-		}
-
-		g_dbus_connection_unregister_object(	inst->session_bus_conn,
-							inst->base_reg_id );
-
-		g_hash_table_remove_all(inst->base_prop_table);
-		g_hash_table_unref(inst->base_prop_table);
-		g_clear_pointer(&inst->base_sig_id_list, g_free);
-	}
-}

@@ -25,7 +25,7 @@
 
 #include "gmpv_application.h"
 #include "gmpv_application_private.h"
-#include "gmpv_actionctl.h"
+#include "gmpv_application_action.h"
 #include "gmpv_mpv_wrapper.h"
 #include "gmpv_common.h"
 #include "gmpv_menu.h"
@@ -174,13 +174,9 @@ static void initialize_gui(GmpvApplication *app)
 				G_CALLBACK(shutdown_handler),
 				app );
 
-	gmpv_actionctl_map_actions(app);
+	gmpv_application_action_add_actions(app);
 	gmpv_mpris_init(app);
 	gmpv_media_keys_init(app);
-
-	g_timeout_add(	SEEK_BAR_UPDATE_INTERVAL,
-			(GSourceFunc)update_seek_bar,
-			app );
 
 	g_free(mpvinput);
 }
@@ -214,7 +210,10 @@ static void open_handler(	GApplication *gapp,
 	GmpvApplication *app = data;
 	gboolean ready = FALSE;
 
-	g_object_get(app->controller, "ready", &ready, NULL);
+	if(app->controller)
+	{
+		g_object_get(app->controller, "ready", &ready, NULL);
+	}
 
 	app->enqueue = (g_strcmp0(hint, "enqueue") == 0);
 
@@ -393,8 +392,11 @@ static void idle_handler(	GObject *object,
 static void ready_handler(GObject *object, GParamSpec *pspec, gpointer data)
 {
 	GmpvApplication *app = data;
+	gboolean ready = FALSE;
 
-	if(app->files)
+	g_object_get(object, "ready", &ready, NULL);
+
+	if(ready && app->files)
 	{
 		for(gint i = 0; app->files[i]; i++)
 		{
